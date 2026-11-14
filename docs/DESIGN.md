@@ -140,7 +140,7 @@ file system, identified by its root URI:
    vfssftp one and 17.2 compares like with like: `host`, `port` (22), `user`, `auth`, `password`, `identityFile`,
    `privateKey`, `knownHosts`, `strictHostKeyChecking` (`yes`), `connectTimeout`.
 3. Keys: the key (from `privateKey`, or read from `identityFile`) is given to VFS as bytes (`BytesIdentityInfo`).
-4. Host keys (Q5, recommended 2026-11-13, awaiting OK): as parley-files-sftp does them. `knownHosts` is a local file
+4. Host keys (Q5, decided 2026-11-13): as parley-files-sftp does them. `knownHosts` is a local file
    (default `~/.ssh/known_hosts`), given to VFS with `setKnownHosts(File)`; `strictHostKeyChecking` (default `yes`)
    with `setStrictHostKeyChecking`. parley-files-sftp's `knownHosts` is already a local file setting
    (`ConnectionSetting.localFile`), so this adds no new local-file case, and it uses VFS's own options with nothing
@@ -332,9 +332,8 @@ A `filesource:` URL (`filesource:/dir?sourcetype=vfszip&archive=...`) works as f
 4. **Q4 archives on a FileSource: later, recorded.** A small VFS provider for a `parley:` scheme (a VFS `FileObject`
    over a FileSource) would let VFS open `zip:parley:...`, so an archive on any Parley file system (sftp, a database
    ...) can be read, keeping to Parley's rule of FileSource over files. After the first schemes work.
-5. **Q5 sftp host keys: recommended, awaiting your OK.** parley-files-sftp's settings and behaviour: `knownHosts` a
-   local file (default `~/.ssh/known_hosts`) and `strictHostKeyChecking` (default `yes`), through VFS's own options
-   (4.4.4).
+5. **Q5 sftp host keys: decided, as parley-files-sftp does them.** `knownHosts` a local file (default
+   `~/.ssh/known_hosts`) and `strictHostKeyChecking` (default `yes`), through VFS's own options (4.4.4).
 6. **Q6 a scheme that can't list (http): decided for now, an empty list** (5.5).
 7. **Q7 GraalVM: later.** VFS finds its providers from `providers.xml` by reflection; to be checked before
    parley-files-vfs goes into fsh's native build.
