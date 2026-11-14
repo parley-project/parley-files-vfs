@@ -109,7 +109,8 @@ fall short:
 
 1. **Much slower with small files and over TLS.** Over FTP, creating 1,000 small files took 46.9 s against 0.73 s
    (about 64 times). Over FTPS, a 1 MB upload took 0.152 s against 0.015 s, 100 small files 14.6 s against 0.71 s,
-   and 8 threads 17.6 s against 5.7 s. Big transfers are close (100 MB within 25 %).
+   and 8 threads 17.6 s against 5.7 s. Over explicit TLS (vfsftp with `secure`) the same: 100 small files 14.6 s
+   against 1.04 s, a 1 MB upload 0.194 s against 0.040 s. Big transfers are close (100 MB within 25 %).
 2. **Can't set permission bits or times** (VFS's ftp has no SITE CHMOD or MFMT), so three of the shared tests that set
    permissions fail: 22 passed against 26 for parley-files-ftp. A directory's time is the listing's.
 3. **Can't write at a position** (`getRandomAccessStream("rw")`), so `fileChannelMapsPrivateAndReadWrite` is skipped.
