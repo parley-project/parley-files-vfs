@@ -60,8 +60,9 @@ Found by checking Commons VFS 2.10.0's code and its capabilities at run time (20
 6. **Each factory has a VFS manager of its own.** VFS's shared one (`VFS.getManager()`) serves the whole JVM, and
    closing it would close everyone's connections.
 7. **A plain VFS URL can't be opened through `FileSource.of(URI)`** (it takes only `filesource:` and `file:`), and a
-   `java.net.URL` can't be had for a scheme with a `-` in it or for one the JDK already owns (http, https, jar, file). Hence the type
-   ids and URL schemes named `vfs` + the scheme (`vfszip:file:///tmp/a.zip!/dir`).
+   `java.net.URL` needs a handler for its scheme, which can't be given for one the JDK already owns (http, https, jar,
+   file) or for Parley's own sftp, ftp and ftps. Hence type ids and URL schemes named `vfs` + the scheme
+   (`vfszip:file:///tmp/a.zip!/dir`), which `FileSourceFactory.getFileSource(URL)` opens.
 8. **VFS's sftp runs `id -u` and `id -G` on the server** (an exec channel) to work out what the user may do. On a
    server that allows SFTP only, it can't, and takes the user to be every file's owner.
 9. **VFS has no owner, group or other permission bits in its API**, only what the connected user can do. sftp and ftp

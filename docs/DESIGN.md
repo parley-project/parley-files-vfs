@@ -148,7 +148,7 @@ file system, identified by its root URI:
    `setIdentityRepositoryFactory` (that hook is meant for identities, so it would be a side effect VFS doesn't promise
    to keep), and a hidden `FileProxy` copy of the known hosts (more code for the same file).
 5. Agent login (`auth` = Agent): later, through `setIdentityRepositoryFactory` with JSch's agent support.
-4. JSch: the maintained `com.github.mwiede:jsch`, as parley-files-sftp-jsch uses, which makes `vfssftp` against
+6. JSch: the maintained `com.github.mwiede:jsch`, as parley-files-sftp-jsch uses, which makes `vfssftp` against
    `sftp-jsch` the cleanest 17.2 pair.
 
 ### 4.5 The rest of FileSourceFactory

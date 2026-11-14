@@ -98,7 +98,7 @@
 			<artifactId>junit-jupiter</artifactId>
 			<scope>test</scope>
 		</dependency>
-		<!-- For the vfs-sftp tests (the first scheme built) -->
+		<!-- For the vfssftp tests (the first scheme built) -->
 		<dependency>
 			<groupId>com.github.mwiede</groupId>
 			<artifactId>jsch</artifactId>
