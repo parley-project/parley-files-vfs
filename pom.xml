@@ -1,0 +1,109 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<!-- License, developer, SCM, URL, Java level and the Maven Central release profile
+	     all come from parley-parent. -->
+	<parent>
+		<groupId>us.bringardner.parley</groupId>
+		<artifactId>parley-parent</artifactId>
+		<version>2.0.0-SNAPSHOT</version>
+		<relativePath>../parley-parent/pom.xml</relativePath>
+	</parent>
+
+	<artifactId>parley-files-vfs</artifactId>
+	<name>Parley Files VFS</name>
+	<description>parley-files FileSource implementations for the file systems Apache Commons VFS reaches
+		(archives, HTTP, WebDAV, SFTP, FTP ...): one factory per VFS scheme, found at runtime through
+		ServiceLoader. A scheme's own library (JSch for sftp, commons-compress for tar, httpclient5 for
+		http) is added by the application that uses that scheme.</description>
+
+	<properties>
+		<!-- Written to the jar manifest as Automatic-Module-Name -->
+		<parley.moduleName>us.bringardner.parley.files.vfs</parley.moduleName>
+		<junit.version>5.11.4</junit.version>
+		<commons-vfs2.version>2.10.0</commons-vfs2.version>
+		<!-- The maintained JSch fork parley-files-sftp-jsch uses; VFS's sftp provider takes it
+		     in place of com.jcraft:jsch (same packages). Tests only: users add it for sftp. -->
+		<jsch.version>2.28.7</jsch.version>
+	</properties>
+
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.junit</groupId>
+				<artifactId>junit-bom</artifactId>
+				<version>${junit.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
+	<build>
+		<plugins>
+			<!-- Attaches the -sources.jar. The version comes from parley-parent; package (not deploy)
+			     so the source jar is attached BEFORE the deploy plugin runs. -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-source-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>attach-sources</id>
+						<phase>package</phase>
+						<goals>
+							<goal>jar-no-fork</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+
+	<!-- GitHub Packages. Maven Central releases use: mvn -Prelease clean deploy -->
+	<distributionManagement>
+		<repository>
+			<id>github</id>
+			<name>parley-project</name>
+			<url>https://maven.pkg.github.com/parley-project/parley-files-vfs</url>
+		</repository>
+	</distributionManagement>
+
+	<dependencies>
+		<!-- The FileSource API this implements -->
+		<dependency>
+			<groupId>us.bringardner.parley</groupId>
+			<artifactId>parley-files</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<!-- Apache Commons VFS: the one direct dependency (it brings commons-io, commons-lang3 and
+		     commons-logging). Each scheme's own library is optional in VFS and not added here. -->
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-vfs2</artifactId>
+			<version>${commons-vfs2.version}</version>
+		</dependency>
+
+		<!-- The shared FileSource test suite -->
+		<dependency>
+			<groupId>us.bringardner.parley</groupId>
+			<artifactId>parley-files</artifactId>
+			<version>${project.version}</version>
+			<type>test-jar</type>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- For the vfs-sftp tests (the first scheme built) -->
+		<dependency>
+			<groupId>com.github.mwiede</groupId>
+			<artifactId>jsch</artifactId>
+			<version>${jsch.version}</version>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+</project>
