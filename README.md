@@ -38,7 +38,7 @@ module doesn't depend on them: add the one for each scheme you use.
 | `vfstar`, `vfstgz`, `vfstbz2` (`tar`, `tgz`, `tbz2`) | `org.apache.commons:commons-compress` | no (read only) |
 | `vfsgz` (`gz`) | nothing | its one file |
 | `vfsbz2` (`bz2`) | `org.apache.commons:commons-compress` | its one file |
-| `vfshttp`, `vfshttps` (`http`, `https`) | `org.apache.httpcomponents.client5:httpclient5` | no (read only, no listing) |
+| `vfshttp`, `vfshttps` (`http`, `https`) | `org.apache.httpcomponents.client5:httpclient5` | no (read only; folders from the server's listing pages) |
 | `vfswebdav4`, `vfswebdav4s` (`webdav4`, `webdav4s`) | `org.apache.commons:commons-vfs2-jackrabbit2` (VFS's WebDAV provider is its own artifact) | yes (random access: read only) |
 
 Each type id is `vfs` + the VFS scheme, and is also the scheme of its URLs: `vfszip:file:///tmp/a.zip!/dir` is VFS's
@@ -172,6 +172,21 @@ FileSource inTgz = FileSourceFactory.getFileSource("vfstgz:file:///tmp/a.tgz!/di
 `/a.txt`). It can be read and written; writing replaces the whole compressed file, and makes it if it isn't there yet.
 Its length is counted by reading it through (VFS doesn't know it), once per change.
 
+## Using vfshttp and vfshttps
+
+A web site, read only. Settings: `host`, `port` (80, or 443 for vfshttps), `user` and `password` (sent when the server
+asks for a login) and `timeout` (30s). Add `org.apache.httpcomponents.client5:httpclient5`.
+
+```java
+FileSource page = FileSourceFactory.getFileSource("vfshttps://example.com/pub/notes.txt");
+FileSource[] files = FileSourceFactory.getFileSource("vfshttps://example.com/pub/").listFiles();
+```
+
+A folder's files are the links on the server's listing page (Apache's, nginx's and the like): a folder whose listing
+the server won't show lists nothing, but its files can still be read by name. Reading at a position uses the server's
+ranges where it has them. HTTPS certificates are checked as Parley checks them (the chain by the application's or the
+JVM's trust managers, and the host), also after a redirect to HTTPS: VFS by itself accepts any certificate.
+
 ## Workarounds and skipped tests
 
 Everything parley-files-vfs does differently from VFS left to itself, and every test that doesn't run, with where it is
@@ -197,7 +212,7 @@ sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src
 | A12 | `isHidden()` not answered by every provider | VFS's answer, or a name starting with "." | `aNameStartingWithADotIsHidden` (a file and a folder; a dot inside the name doesn't count) |
 | A13 | A `vfs<scheme>:` URL has no `URLConnection` (parley-files' takes only `filesource:`) [11] | `VfsUrlConnection` opens it with `getFileSource(URL)` and disconnects that factory when its stream closes | `aVfsUrlOpensAsAJavaNetUrl` (both factory tests) |
 | A14 | A write on a read-only file system (an archive) fails with VFS's message | An IOException saying the file system is read only | `VfsLocalFactoryTest.vfsresIsReadOnly`, `VfsArchiveTest.readOnly` (every archive type) |
-| A15 | A file system that can't list (http) throws | An empty list (Q6) | Not yet: no http scheme is built |
+| A15 | A file system that can't list (http) throws | An empty list (Q6); vfshttp lists from listing pages, and a folder whose page can't be read lists nothing | `VfsHttpTest.aFolderWithoutAListingListsNothing` |
 | A16 | A nested URL (`vfszip:file:///a.zip!/dir`) reaches the factory whole | `createFileSource` takes a value starting with the root URI as a path; the archive is what comes before the last `!/` | `VfsArchiveTest.aVfsUrlOpens` (zip, tgz) |
 | A17 | A scheme whose optional library is missing: sftp is dropped (connect says the URI is "a relative path"), ftp throws NoClassDefFoundError, and the manager made for that connect stays open | connect checks for the library's class first (`libraryClass()`) and throws an IOException naming the jar to add, e.g. "vfssftp needs JSch (com.github.mwiede:jsch) on the class path"; a connect that fails in any way, Errors included, closes its manager | `withoutJSch`, `withoutCommonsNet` (the message, twice, and still disconnected); the manager closed on an Error: not on its own |
 
@@ -256,6 +271,17 @@ sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src
 | F3 | gz and bz2: the one file exists, and is listed, before the compressed file does [21] | It exists only when the compressed file does; writing it makes the compressed file | `VfsCompressedTest.writingMakesAMissingCompressedFile` |
 | F4 | gz and bz2: any name is written over the compressed file [21] | Only the one file can be written | `onlyItsOneFileCanBeWritten` |
 | F5 | gz and bz2: the file's length is -1 [21] | Counted by reading it through, kept while the compressed file is unchanged | `readsAndCountsItsOneFile`, `writingReplacesTheCompressedFile` |
+
+### G. vfshttp and vfshttps (`VfsHttpFileSourceFactory`, `VfsHttpsFileSourceFactory`, `VfsHttpClient`)
+
+| # | VFS left to itself | What vfshttp and vfshttps do | Tested by |
+|---|---|---|---|
+| G1 | Every HTTPS certificate trusted (httpclient5's TrustAllStrategy), whatever the options [22] | Their own provider: the chain by `VfsTrustManager`, the host by httpclient5's verifier, for `http` and `https` (redirects too) | `VfsHttpsTest`: `aCertificateTheJvmDoesntTrustIsRefused`, `aTrustedCertificateForAnotherHostIsRefused`, `aRedirectToHttpsIsChecked`, `vfsAloneTrustsAnything` |
+| G2 | Every URL that answers is a file; no listing [23] | A folder is a path whose "/" form is an HTML page (or a refused listing); its files are its page's links | `foldersFromListingPages`, `listingLinks`, `aFolderWithoutAListingListsNothing` |
+| G3 | A password given through an authenticator is cleared before httpclient5 uses it [24] | The client gets a copy | `aLogin` |
+| G4 | A root URI with a user (`http://tony@host/`) fails every request [24] | No user in the root URI; it goes through the authenticator; the factory's URL keeps it | `aLogin`, `urls` |
+| G5 | httpclient5 needed on the class path | Used from `VfsHttpClient` only, loaded after connect checks for it | `VfsOptionalLibrariesTest.withoutHttpClient5` |
+| G6 | A refused login: "Could not determine the type of file" | "... refused the login (401 Unauthorized)" | `aLogin` |
 
 ### D. Tests that don't run, and why
 
@@ -341,3 +367,9 @@ Found by checking Commons VFS 2.10.0's code and its capabilities at run time (20
 21. **VFS's gz and bz2 hold one file and get it wrong at the edges.** The file is named after the compressed file
     without its extension. VFS says it exists, and lists it, before the compressed file exists; it writes any name
     given (`gz:file:///a.txt.gz!/other.txt`) over the compressed file; and it gives the file's length as -1.
+22. **VFS's http and https trust every certificate.** Its httpclient5 provider builds its TLS with `TrustAllStrategy`
+    whatever its options say, even with a key store set; only its hostname verifier (on by default) checks anything.
+23. **VFS's http has no folders.** Every URL that answers is a file, and listing isn't implemented.
+24. **VFS's http can't log in through an authenticator, nor with a user in the URI.** It hands httpclient5 the
+    authenticator's password array and then clears it, so the password sent is empty; and httpclient5 refuses a request
+    URI with a user in it, which VFS makes from the root URI.

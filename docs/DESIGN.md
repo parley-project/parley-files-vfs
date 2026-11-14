@@ -685,3 +685,67 @@ missing archive fails the connect naming it; `vfszip:` and `vfstgz:` URLs open t
 `VfsCompressedTest` (gz and bz2): reading and the counted length; writing replaces the compressed file and the length
 is counted again; another name refused; a missing compressed file made by writing. `VfsOptionalLibrariesTest`
 gains `withoutCommonsCompress`. The shared FileSource suites aren't run on the archives: they write.
+
+## 16. vfshttp and vfshttps (2026-11-14)
+
+On VFS's `http` and `https` (its httpclient5 provider, `http5`). Read only, as VFS has them. httpclient5 is optional
+(compiled against, as commons-net is), 5.4.1, the version VFS 2.10.0 is built with; connecting without it says so.
+**Settings, as decided:** `host`, `port` (80; 443 for vfshttps), `user`, `password` (sent when the server asks for a
+login) and `timeout` (30s: VFS's connect and read timeouts). Paths are the site's URL paths. URL
+`vfshttp://tony@host:80/dir/a.txt`.
+
+Each connection's manager gets this module's own providers for `http` and `https` (`VfsHttpClient.Provider`, a subclass
+of VFS's) in place of VFS's, for 16.1 to 16.3; VFS's `http4`, `http5` and the like stay as they are, unused.
+
+### 16.1 Certificates: VFS trusts every one
+
+VFS's http provider builds its TLS with httpclient5's `TrustAllStrategy`, whatever its options say (with a key store
+set, still trust-all), so any certificate is accepted, self-signed or not (checked: `VfsHttpsTest.vfsAloneTrustsAnything`).
+Its hostname verifier is on by default. Here the provider's SSLContext uses `VfsTrustManager` for the chain (the
+application's trust managers, `SecureBaseObject.getDefaultTrustManagers()`, else the JVM's), and the host is checked by
+httpclient5's hostname verifier, which is kept on: it checks the host each connection reaches, so a redirect to another
+host is checked against that host (VfsTrustManager's fixed host, right for FTP's data connections, would refuse a good
+redirect). Both providers are replaced, so an http URL that redirects to https is checked too. No setting turns the
+check off.
+
+### 16.2 Folders: from the server's listing pages (decided)
+
+VFS's http says every URL that answers is a file, and can't list. Here (base hooks `isFolder`, `isFile`, `children`,
+`refreshed`):
+
+1. "/" is a folder; any other path is a folder when the server answers it with a "/" after it with an HTML page (a
+   folder's listing), or refuses that listing (403). Real servers (Apache, nginx, Python's) answer a file's path with
+   a "/" after it with 404; a server that serves the file instead isn't fooled unless the file is HTML.
+2. A folder's files are the links on its listing page: a name, `name/`, or the same as an absolute path or URL on this
+   site; parent links, sort links (`?C=N;O=D`), fragments, links deeper down or to another site are left out;
+   percent-encoding and `&amp;` are decoded; each name once. A link ending in "/" marks a folder, kept until the file is
+   refreshed or the factory disconnects.
+3. A folder whose page isn't HTML, or can't be read, lists nothing (A15), and its files can still be read by name.
+4. The requests go through VFS's own client for the file system (`Site`, a subclass of VFS's `Http5FileSystem`), so they
+   log in, time out, follow redirects and use the proxy as VFS's do, and each response is closed.
+
+### 16.3 Two VFS bugs that stop a login
+
+1. **The password is cleared before it is used.** VFS's provider gives httpclient5 the authenticator's own password
+   array (`UsernamePasswordCredentials` keeps it) and then clears it (`UserAuthenticatorUtils.cleanup`), so every login
+   sends an empty password: with VFS left to itself, a password given through a `UserAuthenticator` never works. The
+   provider here gives the client a copy.
+2. **httpclient5 refuses a request URI with a user** ("Request URI authority contains deprecated userinfo component"),
+   and VFS makes every request from the root URI, so `http://tony@host/` fails every request. The root URI here has no
+   user; the user and password go only through the authenticator, and the factory's own URL (`getURL()`) and
+   `isSameFileSystem` keep the user.
+
+A refused login fails the connect saying so ("... refused the login (401 Unauthorized)"); VFS says only that the type
+of "/" can't be determined.
+
+### 16.4 Tests
+
+`VfsHttpTestServer`, the JDK's own HTTP server on a local folder: lengths and times, ranges (or not), a folder without
+its "/" redirected, listing pages like real servers' (a parent link, sort links, an absolute link, a link to another
+site), a folder whose listing is refused (403), a file asked for with a "/" answered 404, Basic login, HTTPS, and a
+redirect. `VfsHttpTest`: reading, folders and their listings (names decoded, types), a refused listing (A15), read only
+(A14), reading at a position with and without the server's ranges, a login (right, wrong, none), URLs and settings,
+nobody listening, and the link parser on Apache, nginx and absolute-link pages. `VfsHttpsTest`: a trusted
+certificate for the host; one the JVM doesn't trust refused; a trusted one for another host refused; an http URL
+redirecting to https checked; VFS used directly accepting a certificate nothing trusts. `VfsOptionalLibrariesTest`
+gains `withoutHttpClient5`.

@@ -64,11 +64,13 @@ final class VfsTrustManager extends X509ExtendedTrustManager {
 	private final X509TrustManager chain;
 
 	/**
-	 * @param host the host the certificate must be for: a name, or an address literal
+	 * @param host the host the certificate must be for: a name, or an address literal; null to
+	 *        check the chain only (vfshttp, whose client checks the host of each connection itself,
+	 *        a redirect's too: docs/DESIGN.md, 16.1)
 	 * @throws GeneralSecurityException if the JVM's trust store can't be loaded
 	 */
 	VfsTrustManager(String host) throws GeneralSecurityException {
-		this.host = normalize(host);
+		this.host = host == null ? null : normalize(host);
 		this.chain = chainChecker();
 	}
 
@@ -165,6 +167,10 @@ final class VfsTrustManager extends X509ExtendedTrustManager {
 	private void checkHost(X509Certificate[] certs) throws CertificateException {
 		if( certs == null || certs.length == 0 ) {
 			throw new CertificateException("The server sent no certificate");
+		}
+		if( host == null ) {
+			// the chain only: the caller checks the host
+			return;
 		}
 		if( !matches(certs[0], host) ) {
 			throw new CertificateException("The server's certificate isn't for " + host + " (it names "

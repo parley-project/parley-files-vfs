@@ -295,12 +295,13 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	@Override
 	public boolean isFile() throws IOException {
 		FileObject f = fo();
-		return factory.existsOf(f) && f.isFile();
+		return factory.existsOf(f) && factory.isFileOf(f);
 	}
 
 	@Override
 	public boolean isDirectory() throws IOException {
-		return fo().isFolder();
+		FileObject f = fo();
+		return factory.existsOf(f) && factory.isFolderOf(f);
 	}
 
 	/** VFS's answer, or a name starting with "." (VFS's sftp provider doesn't say). */
@@ -312,7 +313,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	@Override
 	public long length() throws IOException {
 		FileObject f = fo();
-		return f.isFile() && factory.existsOf(f) ? factory.lengthOf(f) : 0L;
+		return factory.existsOf(f) && factory.isFileOf(f) ? factory.lengthOf(f) : 0L;
 	}
 
 	@Override
@@ -348,7 +349,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 		if( !factory.existsOf(f) ) {
 			return false;
 		}
-		Capability c = f.isFolder() ? Capability.SET_LAST_MODIFIED_FOLDER : Capability.SET_LAST_MODIFIED_FILE;
+		Capability c = factory.isFolderOf(f) ? Capability.SET_LAST_MODIFIED_FOLDER : Capability.SET_LAST_MODIFIED_FILE;
 		if( !factory.hasCapability(c) ) {
 			return false;
 		}
@@ -371,7 +372,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	public String getContentType() {
 		try {
 			FileObject f = fo();
-			if( f.isFile() ) {
+			if( factory.isFileOf(f) ) {
 				FileContentInfo info = f.getContent().getContentInfo();
 				if( info != null && info.getContentType() != null ) {
 					return info.getContentType();
@@ -416,6 +417,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 		FileObject f = fo;
 		if( f != null ) {
 			f.refresh();
+			factory.refreshedOf(f);
 		}
 	}
 
@@ -759,13 +761,13 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	@Override
 	public FileSource[] listFiles(FileSourceProgress progress) throws IOException {
 		FileObject f = fo();
-		if( !f.isFolder() ) {
+		if( !factory.isFolderOf(f) ) {
 			return null;
 		}
 		if( !factory.hasCapability(Capability.LIST_CHILDREN) ) {
 			return new FileSource[0];
 		}
-		FileObject[] kids = f.getChildren();
+		FileObject[] kids = factory.childrenOf(f);
 		if( progress != null ) {
 			progress.setMaximum(kids.length);
 		}
@@ -798,7 +800,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	/** FileNotFoundException, as java.io.FileInputStream, if it isn't a file. */
 	private FileObject readable() throws IOException {
 		FileObject f = fo();
-		if( f.isFolder() ) {
+		if( factory.isFolderOf(f) ) {
 			throw new FileNotFoundException(path + " (Is a directory)");
 		}
 		if( !factory.existsOf(f) ) {
@@ -872,7 +874,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	@Override
 	public OutputStream getOutputStream(boolean append) throws IOException {
 		FileObject f = fo();
-		if( f.isFolder() ) {
+		if( factory.isFolderOf(f) ) {
 			throw new FileNotFoundException(path + " (Is a directory)");
 		}
 		FileSource parent = getParentFile();
@@ -908,8 +910,8 @@ public class VfsFileSource extends BaseObject implements FileSource {
 			throw new IOException(factory.getTypeId() + " can't " + (write ? "write" : "read") + " at a position in a file (" + path + ")");
 		}
 		FileObject f = fo();
-		if( f.isFolder() || (!write && !factory.existsOf(f)) ) {
-			throw new FileNotFoundException(path + (f.isFolder() ? " (Is a directory)" : " (No such file or directory)"));
+		if( factory.isFolderOf(f) || (!write && !factory.existsOf(f)) ) {
+			throw new FileNotFoundException(path + (factory.isFolderOf(f) ? " (Is a directory)" : " (No such file or directory)"));
 		}
 		if( write && !factory.existsOf(f) ) {
 			if( !createNewFile() && !factory.existsOf(f) ) {

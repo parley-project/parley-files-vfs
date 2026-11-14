@@ -181,6 +181,46 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 	}
 
 	/**
+	 * Whether FO is a folder: by default VFS's answer. vfshttp asks the server (VFS's http says
+	 * every URL is a file: docs/DESIGN.md, 16.2).
+	 * @param fo the file
+	 * @return true for a folder
+	 * @throws IOException if it can't be told
+	 */
+	protected boolean isFolder(FileObject fo) throws IOException {
+		return fo.isFolder();
+	}
+
+	/**
+	 * Whether FO is a file: by default VFS's answer.
+	 * @param fo the file
+	 * @return true for a file
+	 * @throws IOException if it can't be told
+	 */
+	protected boolean isFile(FileObject fo) throws IOException {
+		return fo.isFile();
+	}
+
+	/**
+	 * A folder's children: by default VFS's. vfshttp reads them from the server's listing page.
+	 * @param fo a folder
+	 * @return its children
+	 * @throws IOException if they can't be listed
+	 */
+	protected FileObject[] children(FileObject fo) throws IOException {
+		return fo.getChildren();
+	}
+
+	/**
+	 * Told when a file is refreshed, so a scheme can forget what it kept about it (vfshttp: whether
+	 * it is a folder). Nothing by default.
+	 * @param fo the file
+	 */
+	protected void refreshed(FileObject fo) {
+		// nothing kept
+	}
+
+	/**
 	 * A file's length: by default VFS's. vfsgz and vfsbz2 count it, as VFS doesn't know it (15.3).
 	 * @param fo a file that exists
 	 * @return the length in bytes
@@ -382,6 +422,26 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 	/** {@link #exists(FileObject)} for VfsFileSource */
 	boolean existsOf(FileObject fo) throws IOException {
 		return exists(fo);
+	}
+
+	/** {@link #isFolder(FileObject)} for VfsFileSource */
+	boolean isFolderOf(FileObject fo) throws IOException {
+		return isFolder(fo);
+	}
+
+	/** {@link #isFile(FileObject)} for VfsFileSource */
+	boolean isFileOf(FileObject fo) throws IOException {
+		return isFile(fo);
+	}
+
+	/** {@link #children(FileObject)} for VfsFileSource */
+	FileObject[] childrenOf(FileObject fo) throws IOException {
+		return children(fo);
+	}
+
+	/** {@link #refreshed(FileObject)} for VfsFileSource */
+	void refreshedOf(FileObject fo) {
+		refreshed(fo);
 	}
 
 	/** {@link #length(FileObject)} for VfsFileSource */

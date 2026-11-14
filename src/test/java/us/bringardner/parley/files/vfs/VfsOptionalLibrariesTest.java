@@ -44,7 +44,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
- * JSch, commons-net and commons-compress are optional (README B8, C14, F1): an application that uses only vfsftp has no
+ * JSch, commons-net, commons-compress and httpclient5 are optional (README B8, C14, F1, G5): an application that uses only vfsftp has no
  * JSch, and one that uses only vfssftp has no commons-net, yet parley-files' registry creates every
  * factory parley-files-vfs lists. So each factory must load, and say its type id and settings,
  * without the other scheme's library, and the other scheme must work.
@@ -277,6 +277,22 @@ public class VfsOptionalLibrariesTest {
 					call(f, "disConnect");
 				}
 			}
+		}
+	}
+
+	/** An application without httpclient5: vfshttp and vfshttps load but can't connect, saying which jar to add. */
+	@Test
+	void withoutHttpClient5() throws Exception {
+		try (Without w = new Without("httpclient5-")) {
+			w.lacks("org.apache.hc.client5.http.classic.HttpClient");
+			for (String type : new String[] { "vfshttp", "vfshttps" }) {
+				Properties p = new Properties();
+				p.setProperty("host", "127.0.0.1");
+				IOException e = connectFails(registered(w, type, 5), p);
+				assertEquals(type + " needs httpclient5 (org.apache.httpcomponents.client5:httpclient5) on the class path"
+						+ " (org.apache.hc.client5.http.classic.HttpClient is missing)", e.getMessage());
+			}
+			works(newFactory(w, "vfsftp"), ftp.properties(), "no-httpclient5.txt");
 		}
 	}
 }
