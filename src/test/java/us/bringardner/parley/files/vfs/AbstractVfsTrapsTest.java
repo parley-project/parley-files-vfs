@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -246,7 +247,9 @@ public abstract class AbstractVfsTrapsTest {
 
 	/**
 	 * README A1: each factory has a VFS manager of its own, never VFS's one for the whole JVM, so
-	 * disconnecting one factory leaves another's files and open streams working.
+	 * disconnecting one factory leaves another's files and open streams working. vfsram and vfstmp
+	 * share one per name instead (A18), and disconnecting one of the sharers must leave it working
+	 * just the same.
 	 */
 	@Test
 	void eachFactoryHasAVfsManagerOfItsOwn() throws Exception {
@@ -255,7 +258,11 @@ public abstract class AbstractVfsTrapsTest {
 		VfsFileSourceFactory other = server.connect();
 		try {
 			Object mine = manager(factory);
-			assertNotSame(mine, manager(other));
+			if( factory instanceof VfsNamedFileSourceFactory ) {
+				assertSame(mine, manager(other), "the same name shares one manager");
+			} else {
+				assertNotSame(mine, manager(other));
+			}
 			assertEquals("0123456789", read(other.createFileSource(f.getAbsolutePath())));
 			try (InputStream in = f.getInputStream()) {
 				assertEquals('0', in.read());

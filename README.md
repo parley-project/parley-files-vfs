@@ -31,6 +31,9 @@ module doesn't depend on them: add the one for each scheme you use.
 |---|---|---|
 | `vfssftp` (`sftp`) | `com.github.mwiede:jsch` (the maintained JSch fork, same packages as `com.jcraft:jsch`) | yes (random access: read only) |
 | `vfsftp`, `vfsftps` (`ftp`, `ftps`) | `commons-net:commons-net` | yes (random access: read only) |
+| `vfsfile` (`file`) | nothing | yes (random access: read and write) |
+| `vfstmp`, `vfsram` (`tmp`, `ram`) | nothing | yes (random access: read and write) |
+| `vfsres` (`res`) | nothing | no (read only) |
 | `vfszip`, `vfsjar` (`zip`, `jar`) | nothing | no (read only) |
 | `vfstar`, `vfstgz`, `vfstbz2` (`tar`, `tgz`, `tbz2`) | `org.apache.commons:commons-compress` | no (read only) |
 | `vfshttp`, `vfshttps` (`http`, `https`) | `org.apache.httpcomponents.client5:httpclient5` | no (read only, no listing) |
@@ -130,12 +133,34 @@ recover on the next call, keep 8 threads on one connection right, and leave no f
 ftps used directly accepts a certificate it wasn't told to trust (item 14 below); vfsftp and vfsftps refuse one, as
 parley-files-ftp does.
 
+## Using vfsfile, vfstmp, vfsram and vfsres
+
+None of them needs a library.
+
+1. **`vfsfile`** is the local disk through VFS. Its one setting, `root`, is the local folder it serves as "/" (by
+   default the whole disk: `/`, or on Windows the drive of the working directory); nothing above the root can be
+   reached. `vfsfile:///tmp/a.txt` is the disk's `/tmp/a.txt`.
+2. **`vfsram`** is a file system in memory and **`vfstmp`** one in a temporary folder VFS makes in `java.io.tmpdir`.
+   Their one setting is `name` (default `default`): factories of the same type with the same name, and their copies,
+   share one file system, which is gone (vfstmp's folder deleted) when the last of them disconnects.
+   `vfsram:///a.txt?name=cache`.
+3. **`vfsres`** reads the class path, read only, with no settings: `/a/b.txt` (`vfsres:/a/b.txt`) is the resource
+   `a/b.txt`. "/" lists nothing, since nothing can list the class path, and a folder lists the first class path entry
+   (jar or folder) that has it.
+
+```java
+FileSource scratch = FileSourceFactory.getFileSource("vfsram:///work/a.txt?name=cache");
+FileSource props = FileSourceFactory.getFileSource("vfsres:/META-INF/MANIFEST.MF");
+```
+
+vfsfile and vfstmp read and set every permission bit, each alone, where the disk has POSIX bits; vfsram has none.
+
 ## Workarounds and skipped tests
 
 Everything parley-files-vfs does differently from VFS left to itself, and every test that doesn't run, with where it is
 and what tests it, as a checklist for testing. Item numbers in brackets are those of "What VFS does" below; DESIGN
 sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src/test` and their methods
-(`AbstractVfs*Test` methods run for both vfssftp and vfsftp).
+(`AbstractVfs*Test` methods run for every scheme with a test server: vfssftp, vfsftp, vfsfile, vfstmp, vfsram).
 
 ### A. Every scheme (`VfsFileSource`, `VfsFileSourceFactory`)
 
@@ -154,10 +179,13 @@ sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src
 | A11 | Owner, group, link target, access and creation times unknown | A principal with no name; `getLinkedTo()` null; times 0 | `ownerGroupLinkAndOtherTimesAreUnknown` (a file and a folder; the setters return false) |
 | A12 | `isHidden()` not answered by every provider | VFS's answer, or a name starting with "." | `aNameStartingWithADotIsHidden` (a file and a folder; a dot inside the name doesn't count) |
 | A13 | A `vfs<scheme>:` URL has no `URLConnection` (parley-files' takes only `filesource:`) [11] | `VfsUrlConnection` opens it with `getFileSource(URL)` and disconnects that factory when its stream closes | `aVfsUrlOpensAsAJavaNetUrl` (both factory tests) |
-| A14 | A write on a read-only file system (an archive) fails with VFS's message | An IOException saying the file system is read only | Not yet: no archive scheme is built |
+| A14 | A write on a read-only file system (an archive) fails with VFS's message | An IOException saying the file system is read only | `VfsLocalFactoryTest.vfsresIsReadOnly` |
 | A15 | A file system that can't list (http) throws | An empty list (Q6) | Not yet: no http scheme is built |
 | A16 | A nested URL (`vfszip:file:///a.zip!/dir`) reaches the factory whole | `createFileSource` takes a value starting with the root URI as a path | Not yet: no archive scheme is built |
 | A17 | A scheme whose optional library is missing: sftp is dropped (connect says the URI is "a relative path"), ftp throws NoClassDefFoundError, and the manager made for that connect stays open | connect checks for the library's class first (`libraryClass()`) and throws an IOException naming the jar to add, e.g. "vfssftp needs JSch (com.github.mwiede:jsch) on the class path"; a connect that fails in any way, Errors included, closes its manager | `withoutJSch`, `withoutCommonsNet` (the message, twice, and still disconnected); the manager closed on an Error: not on its own |
+
+| A18 | A thread-safe copy (a new manager) of a ram or tmp factory would see an empty file system | vfsram and vfstmp share one manager per type and `name`, counted, closed by the last factory to disconnect (DESIGN 14.2) | `VfsLocalFactoryTest`: `ramAndTmpAreSharedByName`, `ramAndTmpAreGoneWhenTheLastDisconnects`; `AbstractVfsTrapsTest.eachFactoryHasAVfsManagerOfItsOwn` (the same manager for one name) |
+| A19 | A path resolves from the file system's root (for `file`, the whole disk) | A path resolves under the factory's root, so vfsfile reaches nothing above its `root` | `vfsfilePathsAreFromItsRootAndCantLeaveIt` |
 
 ### B. vfssftp (`VfsSftpFileSourceFactory`)
 
@@ -193,6 +221,15 @@ sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src
 | C13 | Can't set a permission bit or a time | The setters return false | `TestVfsFtp.testPermissions`, `timesCantBeSetButAreReadToTheSecond` |
 | C14 | commons-net needed on the class path to load anything | commons-net is used from a nested class only | `VfsOptionalLibrariesTest.withoutCommonsNet` (without commons-net: all three register; vfssftp works) |
 
+### E. vfsfile, vfstmp, vfsram, vfsres (`VfsFileFileSourceFactory`, `VfsNamedFileSourceFactory`, `VfsResFileSourceFactory`)
+
+| # | VFS left to itself | What parley-files-vfs does | Tested by |
+|---|---|---|---|
+| E1 | `file` is the whole disk | A `root` folder (default the whole disk); a root that isn't a folder fails the connect | `vfsfileRootMustBeAFolder`, `vfsfileWithoutARootServesTheWholeDisk` |
+| E2 | Only what the connected user can do, no owner, group or other bits [9] | vfsfile and vfstmp read and set the nine bits with java.nio, each alone (`LocalBits`; a tmp file's path by reflection on `LocalFile.getLocalFile()`, false bits, logged once, if that fails) | `VfsFilePermissionBitsTest`, `TestVfsFile` and `TestVfsTmp`'s `testPermissions`, their NIO suites' `testFileAttributes` and `testCreateDir` |
+| E3 | `ram` has no permission bits | They read false and every setter returns false | `TestVfsRam.testPermissions` |
+| E4 | `res:/` is refused; `res:a/b` becomes the jar or folder holding it [20] | "/" is an empty folder of the factory's own; `/a/b` is the resource `a/b`; a missing one doesn't exist; read only, whatever its jar or folder could do | `vfsresReadsTheClassPath`, `vfsresIsReadOnly`, `vfsresUrls` |
+
 ### D. Tests that don't run, and why
 
 With the test server each class starts: as an ordinary user 185 tests, 29 skipped, none failing (with or without an
@@ -201,14 +238,17 @@ ssh-agent: D10); as root 179.
 | # | Test | Skipped for | Count |
 |---|---|---|---|
 | D1 | `AbstractLockTests`' cross-process cases (`VfsSftpLockTest`, `VfsFtpLockTest`) | The suite skips them: VFS's locks reach only this JVM (scope PROCESS) | 11 each |
-| D2 | `fileChannelMapsPrivateAndReadWrite` (both NIO tests) | The suite skips it: it writes at a position, which no remote VFS scheme can | 1 each |
+| D2 | `fileChannelMapsPrivateAndReadWrite` (the vfssftp and vfsftp NIO tests) | The suite skips it: it writes at a position, which no remote VFS scheme can (vfsfile, vfstmp and vfsram run it) | 1 each |
 | D3 | `VfsSftpNioProviderTests.transferToStopsWhenTheTargetTakesNothing` | JSch drops a stream whose reading thread has ended, and the test reads in one thread and closes in another [10] | 1 |
 | D4 | `VfsFtpNioProviderTests`: `testFileAttributes`, `testCreateDir` | They set permission bits, which VFS's ftp can't (C13) | 2 |
 | D5 | `VfsFtpNioProviderTests.fileChannelForceSendsWhatIsHeld` | An FTP upload is stored when it ends, as parley-files-ftp's NIO tests say too | 1 |
 | D6 | `VfsFtpPermissionBitsTest` | As root only: Parley's FtpServer lists every file as writable by its owner when run as root | the class |
 | D7 | `AbstractVfsPermissionBitsTest` (both schemes) | On Windows: POSIX bits | the class |
-| D8 | `AbstractRandomAccessStreamTests` | Not run at all: it writes at positions; `AbstractVfsRandomAccessTest` reads at positions instead, and checks that "rw" is refused | not counted |
+| D8 | `AbstractRandomAccessStreamTests` (vfssftp, vfsftp) | Not run for them: it writes at positions; `AbstractVfsRandomAccessTest` reads at positions instead, and checks that "rw" is refused. vfsfile, vfstmp and vfsram run it | not counted |
 | D9 | `TestVfsFtp.testPermissions` | Replaced, not skipped: the shared test toggles bits; vfsftp's checks that every setter returns false and changes nothing (C13) | not counted |
+| D11 | `VfsRamNioProviderTests`: `testFileAttributes`, `testCreateDir` | They set permission bits, which VFS's ram hasn't got (E3) | 2 |
+| D12 | `VfsRamNioProviderTests.fileChannelForceSendsWhatIsHeld` | VFS's ram stores a file when its stream closes | 1 |
+| D13 | `AbstractLockTests`' cross-process cases (`VfsFileLockTest`, `VfsTmpLockTest`, `VfsRamLockTest`) | As D1 | 11 each |
 | D10 | `VfsSftpLoginTest`: `theAgentLogsIn`, or `withNoAgentRunningAgentLoginSaysSo` | One of the two, by whether an ssh-agent with a key is running (SSH_AUTH_SOCK); the second also on Windows | 1 |
 
 ## What VFS does that matters here
@@ -268,3 +308,6 @@ Found by checking Commons VFS 2.10.0's code and its capabilities at run time (20
     (`setSessionTimeout`, unset by default) would end the wait. So against a server that accepts the connection and
     never answers, connecting waits for ever (To-Do 17.2: no answer in 120 s on mx1, nor in 400 s in a cloud check).
     vfssftp leaves it as VFS has it (decided 2026-11-13, documented rather than fixed).
+20. **VFS's `res` isn't a file system.** `res:/` is refused, and `res:a/b.txt` turns into the jar entry or file that
+    holds the resource (`jar:file:///lib/x.jar!/a/b.txt`), so a folder lists only the first class path entry that has
+    it. VFS's `ram` and `tmp` file systems belong to a manager and go when it closes (`tmp`'s folder is deleted).

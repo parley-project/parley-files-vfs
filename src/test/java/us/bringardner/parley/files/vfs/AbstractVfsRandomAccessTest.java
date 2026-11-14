@@ -111,8 +111,16 @@ public abstract class AbstractVfsRandomAccessTest {
 		}
 	}
 
+	/**
+	 * "rw" is refused where the scheme can't write at a position (every remote one); where it can
+	 * (vfsfile, vfstmp, vfsram) it opens, and AbstractRandomAccessStreamTests checks the writing.
+	 */
 	@Test
-	void writingAtAPositionIsRefused() {
+	void writingAtAPositionOnlyWhereTheSchemeCan() throws IOException {
+		if( factory.hasCapability(org.apache.commons.vfs2.Capability.RANDOM_ACCESS_WRITE) ) {
+			file.getRandomAccessStream("rw").close();
+			return;
+		}
 		IOException e = assertThrows(IOException.class, () -> file.getRandomAccessStream("rw").close());
 		assertTrue(e.getMessage().contains("write at a position"), e.getMessage());
 	}

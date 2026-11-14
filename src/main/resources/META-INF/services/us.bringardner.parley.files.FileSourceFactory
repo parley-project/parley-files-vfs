@@ -1,3 +1,7 @@
 us.bringardner.parley.files.vfs.VfsSftpFileSourceFactory
 us.bringardner.parley.files.vfs.VfsFtpFileSourceFactory
 us.bringardner.parley.files.vfs.VfsFtpsFileSourceFactory
+us.bringardner.parley.files.vfs.VfsFileFileSourceFactory
+us.bringardner.parley.files.vfs.VfsTmpFileSourceFactory
+us.bringardner.parley.files.vfs.VfsRamFileSourceFactory
+us.bringardner.parley.files.vfs.VfsResFileSourceFactory

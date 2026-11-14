@@ -560,3 +560,74 @@ Branch `vfs-project2`. README items A1, A11, A12, B8 and C14 had no test of thei
    29 skipped. Not tested on its own: that a connect failing with an Error closes its manager (the library check now
    comes first, so no test reaches that path).
 
+
+## 14. Every VFS scheme gets a factory (decided 2026-11-14)
+
+Branch `vfs-project3`, from `vfs-project2`. Decided 2026-11-14 ("it costs almost nothing to add a vfs protocol"):
+every VFS 2.10.0 scheme gets a factory, once each, on VFS's current client library: `vfsfile`, `vfstmp`, `vfsram`,
+`vfsres`, `vfszip`, `vfsjar`, `vfstar`, `vfstgz`, `vfstbz2`, `vfsgz`, `vfsbz2`, `vfshttp`, `vfshttps`, `vfswebdav`,
+`vfswebdavs` and `vfshdfs`, beside `vfssftp`, `vfsftp` and `vfsftps`. Left out: `http3`, `http3s`, `http4`, `http4s`,
+`http5`, `http5s`, `webdav` and `webdav3`, the same protocols again on older client libraries (VFS's `http` and `https`
+are its httpclient5 provider, and `webdav4` its current WebDAV), and `svnhttps`, which VFS lists but whose code isn't in
+2.10.0. Built in the order local schemes, archives, HTTP, WebDAV, HDFS.
+
+Base changes the new schemes needed (none changes what `vfssftp`, `vfsftp` or `vfsftps` do):
+
+1. `openManager()` / `closeManager()`: where a connection's manager comes from and goes back to (by default made and
+   closed, as before); `resolveRoot()` and `prepareRoot()`: the root's `FileObject`, and a check or a make once it is
+   resolved.
+2. `resolve(root, path)`: a path is resolved under the root (it was resolved from the root's file system's root, the
+   same thing for a server's root), so a factory whose root is a folder reaches nothing above it.
+3. A file kept from an earlier connection is resolved again when its file system's manager isn't the factory's current
+   one (it was: isn't the root's file system), which also holds for files that live in another file system than the
+   root's (vfsres's).
+4. `hasCapability` can be answered by a scheme (vfsres); `fileSystemKey()` names the file system for
+   `isSameFileSystem` (vfsram and vfstmp add their name); `urlSettings()` adds the settings that pick the file system
+   to a `filesource:` URL's query (vfsfile's root, vfsram's name).
+
+### 14.1 vfsfile (decided 2026-11-14)
+
+VFS's `file` scheme is the whole disk (`file:///`; on Windows each drive is a root of its own). **Decided: a `root`
+setting**, a local folder the factory serves as "/", by default the whole disk (`/`, or on Windows the drive of the
+working directory). Paths are from the root and nothing above it can be reached ("/.." stays at the root, 9.6's
+lexical paths). A root that isn't a folder fails the connect, naming it. The URL is VFS's with `vfs` in front:
+`vfsfile:///tmp/a.txt` is the disk's `/tmp/a.txt` (from the whole disk); a `filesource:` URL carries the root
+(`filesource:/a.txt?sourcetype=vfsfile&root=/tmp`). Read, write and random access both ways, as VFS's local
+provider has them.
+
+### 14.2 vfsram and vfstmp: named and shared (decided 2026-11-14)
+
+VFS keeps a RAM file system (`ram`) and a temporary folder (`tmp`, in `java.io.tmpdir/vfs_cache/tmp_N_tempfs`) per
+manager, and deletes them when the manager closes (checked). With a manager per factory, a thread-safe copy of a
+factory would see an empty file system. **Decided: named and shared**: a `name` setting (default `default`); factories
+of one type with the same name, and their copies, share one manager (`SharedManagers`, counted), so one file system,
+which lasts until the last of them disconnects. Another name is another file system. The URL carries a name other than
+the default (`vfsram:///a.txt?name=cache`). This is the one exception to A1 (a manager per factory).
+
+### 14.3 Permission bits of the local schemes
+
+vfsfile's and vfstmp's files are on the local disk, so `posixMode` and `changeMode` read and set their nine bits with
+java.nio's POSIX attributes (`LocalBits`), as parley-files' local FileSource does: each bit alone, as for vfssftp
+(10.6). A tmp file's local path comes from VFS's protected `LocalFile.getLocalFile()` by reflection (a `tmp:` URI has
+no java.nio provider); if that fails, false bits, logged once. Without POSIX attributes (Windows) the bits read false
+and the setters use VFS's. vfsram has no bits at all: they read false and every setter returns false, as vfsftp's.
+
+### 14.4 vfsres: any resource by path (decided 2026-11-14)
+
+VFS's `res` isn't a file system: `res:/` is refused, and `res:a/b.txt` becomes the jar entry or file that holds it
+(`jar:file:///lib/x.jar!/a/b.txt`), so a folder lists only the first class path entry that has it (checked).
+**Decided: any resource by path**, no settings, read only: `/a/b.txt` is the resource `a/b.txt`, found by the class
+loader that loaded VFS. "/" is an empty folder (a RAM folder of the factory's own, never written), as nothing can list
+the class path; a folder lists the first entry that has it; a missing resource doesn't exist. Its capabilities are
+fixed (read, list, type, time): VFS's would be the jar's or the folder's. URL `vfsres:/a/b.txt`.
+
+### 14.5 Tests (local schemes)
+
+`VfsLocalTestServer` stands in for a server: a new folder as vfsfile's root, a new name for vfstmp and vfsram. Each of
+the three runs the shared suites (`TestVfsFile` ..., the NIO suite, the lock suite) and the shared VFS ones (traps,
+random access, now `writingAtAPositionOnlyWhereTheSchemeCan`), and, since these three can write at a position,
+`AbstractRandomAccessStreamTests` itself. `VfsFilePermissionBitsTest` checks LocalBits against the disk.
+`VfsLocalFactoryTest`: vfsfile's root (paths, can't leave it, must be a folder, URLs, settings, copies); vfsram and
+vfstmp shared by name, separate by name, gone with the last factory (vfstmp's files deleted from the disk), URLs;
+vfsres reading, listing, an empty "/", a missing resource, read only (A14) and its URL. vfsram skips what sets
+permission bits (the NIO suite's `testFileAttributes` and `testCreateDir`) and the forced write (stored at close).

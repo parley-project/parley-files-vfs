@@ -187,26 +187,99 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 			return true;
 		}
 		checkLibrary();
-		StandardFileSystemManager m = new StandardFileSystemManager();
-		m.setLogger(new VfsLog(this));
+		StandardFileSystemManager m = openManager();
 		try {
-			m.init();
 			FileSystemOptions options = new FileSystemOptions();
 			if( userName() != null ) {
 				DefaultFileSystemConfigBuilder.getInstance().setUserAuthenticator(options, new VfsAuthenticator(this));
 			}
 			configure(options);
-			FileObject r = m.resolveFile(rootUri(), options);
+			FileObject r = resolveRoot(m, options);
 			// a wrong host, password or archive fails the connect, not the first file call
 			r.exists();
+			prepareRoot(r);
 			manager = m;
 			root = r;
 			return true;
 		} catch (IOException | RuntimeException | Error e) {
 			// whatever failed, Errors too, the manager made for this connect is closed
+			closeManager(m);
+			throw e;
+		}
+	}
+
+	/**
+	 * A started VFS manager for this connection: by default a new one of this factory's own, never
+	 * VFS's one for the whole JVM. vfsram and vfstmp share one per name (docs/DESIGN.md, 14).
+	 * @return the manager
+	 * @throws IOException if VFS can't start one
+	 */
+	protected StandardFileSystemManager openManager() throws IOException {
+		StandardFileSystemManager m = new StandardFileSystemManager();
+		m.setLogger(new VfsLog(this));
+		try {
+			m.init();
+		} catch (IOException | RuntimeException | Error e) {
 			m.close();
 			throw e;
 		}
+		return m;
+	}
+
+	/**
+	 * Gives back a manager {@link #openManager()} gave: by default closes it, and with it every file
+	 * system and stream it opened.
+	 * @param m the manager
+	 */
+	protected void closeManager(StandardFileSystemManager m) {
+		m.close();
+	}
+
+	/**
+	 * The file system's root, resolved on the connection's manager: by default {@link #rootUri()}.
+	 * @param m the manager
+	 * @param options the options {@link #configure(FileSystemOptions)} set
+	 * @return the root
+	 * @throws IOException if it can't be resolved
+	 */
+	protected FileObject resolveRoot(StandardFileSystemManager m, FileSystemOptions options) throws IOException {
+		return m.resolveFile(rootUri(), options);
+	}
+
+	/**
+	 * Checks or makes the root once it is resolved, before the connection is used (vfsfile: it must
+	 * be a folder; vfstmp: it is made).
+	 * @param root the root
+	 * @throws IOException if the root can't be used
+	 */
+	protected void prepareRoot(FileObject root) throws IOException {
+		// nothing by default
+	}
+
+	/**
+	 * The VFS file at PATH (absolute and normalized: "/" or "/a/b") on this connection: by default
+	 * PATH under the root, so a factory whose root is a folder (vfsfile) reaches nothing above it.
+	 * @param root the root
+	 * @param path the path
+	 * @return the file, which may not exist
+	 * @throws IOException if VFS can't resolve it
+	 */
+	protected FileObject resolve(FileObject root, String path) throws IOException {
+		return "/".equals(path) ? root : root.resolveFile(path.substring(1));
+	}
+
+	/**
+	 * Whether F was resolved on this factory's current connection (its manager), so a file kept from
+	 * before a reconnect is resolved again.
+	 */
+	boolean isCurrent(FileObject f) throws IOException {
+		StandardFileSystemManager m = manager;
+		return m != null && f.getFileSystem().getFileSystemManager() == m;
+	}
+
+	/** {@link #resolve(FileObject, String)} on the current connection, for VfsFileSource */
+	FileObject fileObject(String path) throws IOException {
+		return resolve(root(), path);
 	}
 
 	@Override
@@ -215,8 +288,9 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 		manager = null;
 		root = null;
 		if( m != null ) {
-			// closes every file system and stream this manager opened
-			m.close();
+			// closes every file system and stream this manager opened (a shared one: when its last
+			// factory gives it back)
+			closeManager(m);
 		}
 	}
 
@@ -248,8 +322,13 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 		return r;
 	}
 
-	/** @return true if the file system has the capability (connecting first if needed) */
-	boolean hasCapability(Capability c) throws IOException {
+	/**
+	 * @param c a capability
+	 * @return true if the file system has it (connecting first if needed): by default the root's
+	 *         file system's answer
+	 * @throws IOException if it can't connect
+	 */
+	protected boolean hasCapability(Capability c) throws IOException {
 		return root().getFileSystem().hasCapability(c);
 	}
 
@@ -404,10 +483,30 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 			return false;
 		}
 		try {
-			return rootUri().equals(((VfsFileSourceFactory) other).rootUri());
+			return fileSystemKey().equals(((VfsFileSourceFactory) other).fileSystemKey());
 		} catch (IOException e) {
 			return false;
 		}
+	}
+
+	/**
+	 * What names the file system, for {@link #isSameFileSystem(FileSourceFactory)}: by default the
+	 * root URI; vfsram and vfstmp add their name.
+	 * @return the key
+	 * @throws IOException if the settings don't make one
+	 */
+	protected String fileSystemKey() throws IOException {
+		return rootUri();
+	}
+
+	/**
+	 * The settings, besides the server's address and user, that say which file system a
+	 * {@code filesource:} URL means (vfsfile's root, vfsram's name), added to its query; none by
+	 * default. Only those that aren't their default.
+	 * @return the settings, in order
+	 */
+	protected java.util.Map<String, String> urlSettings() {
+		return java.util.Collections.emptyMap();
 	}
 
 	@Override
@@ -450,7 +549,11 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 		if( !port.isEmpty() ) {
 			b.append(':').append(port);
 		}
-		return b.append(path).append('?').append(QUERY_STRING_SOURCE_TYPE).append('=').append(getTypeId()).toString();
+		b.append(path).append('?').append(QUERY_STRING_SOURCE_TYPE).append('=').append(getTypeId());
+		for (java.util.Map.Entry<String, String> e : urlSettings().entrySet()) {
+			b.append('&').append(e.getKey()).append('=').append(encode(e.getValue()));
+		}
+		return b.toString();
 	}
 
 	/** Percent-encodes a user name for a URL's authority. */

@@ -141,10 +141,10 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	 * one (whose manager is closed) is resolved again.
 	 */
 	FileObject fo() throws IOException {
-		FileObject root = factory.root();
+		factory.root();
 		FileObject f = fo;
-		if( f == null || f.getFileSystem() != root.getFileSystem() ) {
-			f = root.getFileSystem().resolveFile(path);
+		if( f == null || !factory.isCurrent(f) ) {
+			f = factory.fileObject(path);
 			fo = f;
 		}
 		return f;
