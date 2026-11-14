@@ -141,7 +141,7 @@ sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src
 
 | # | VFS left to itself | What parley-files-vfs does | Tested by |
 |---|---|---|---|
-| A1 | One manager for the whole JVM (`VFS.getManager()`), which closing would close for everyone [6] | Each factory makes and closes its own manager | Not on its own (every factory test disconnects its own) |
+| A1 | One manager for the whole JVM (`VFS.getManager()`), which closing would close for everyone [6] | Each factory makes and closes its own manager | `AbstractVfsTrapsTest.eachFactoryHasAVfsManagerOfItsOwn` (two factories, different managers; disconnecting one leaves the other's files and an open stream working) |
 | A2 | Moving onto a file that exists deletes it first, a folder with everything in it [3] | `renameTo` returns false if the destination exists; `renameTo(dest, true)` replaces a file or empty folder | `AbstractVfsTrapsTest`: `renameOntoAnExistingFileReturnsFalseAndKeepsBoth`, `renameOntoAnExistingDirectoryLeavesItAlone`, `renameReplacingAFileReplacesIt`, `renameIntoAMissingDirectoryReturnsFalse` |
 | A3 | Create-folder makes every missing parent and does nothing if the folder is there [4] | `mkdir` is one level and false if it's there; `mkdirs` false if it's there | `mkdirIsOneLevelAndFalseIfThere` |
 | A4 | Create-file makes missing parents and does nothing if the file is there [4] | `createNewFile` false if it's there (never truncates), IOException without its directory. **Not atomic** | `createNewFileOnAnExistingFileReturnsFalseAndKeepsIt`, `capabilitiesClaimNothingAtomic` |
@@ -151,12 +151,13 @@ sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src
 | A8 | Capabilities say nothing of atomicity | `getCapabilities()` claims nothing atomic or durable; lock scope PROCESS | `capabilitiesClaimNothingAtomic`, `vfsLocksStayInThisJvm` |
 | A9 | A `FileObject` from a closed manager is dead | A file resolves again after its factory reconnects | `aFileWorksAfterItsFactoryReconnects` (both factory tests) |
 | A10 | Open streams belong to a file's `FileContent` per thread; closing it closes them all | Each stream is closed on its own; `FileContent.close()` is never called while one may be open | The shared suites (no test of its own) |
-| A11 | Owner, group, link target, access and creation times unknown | A principal with no name; `getLinkedTo()` null; times 0 | Not on their own |
-| A12 | `isHidden()` not answered by every provider | VFS's answer, or a name starting with "." | Not on its own |
+| A11 | Owner, group, link target, access and creation times unknown | A principal with no name; `getLinkedTo()` null; times 0 | `ownerGroupLinkAndOtherTimesAreUnknown` (a file and a folder; the setters return false) |
+| A12 | `isHidden()` not answered by every provider | VFS's answer, or a name starting with "." | `aNameStartingWithADotIsHidden` (a file and a folder; a dot inside the name doesn't count) |
 | A13 | A `vfs<scheme>:` URL has no `URLConnection` (parley-files' takes only `filesource:`) [11] | `VfsUrlConnection` opens it with `getFileSource(URL)` and disconnects that factory when its stream closes | `aVfsUrlOpensAsAJavaNetUrl` (both factory tests) |
 | A14 | A write on a read-only file system (an archive) fails with VFS's message | An IOException saying the file system is read only | Not yet: no archive scheme is built |
 | A15 | A file system that can't list (http) throws | An empty list (Q6) | Not yet: no http scheme is built |
 | A16 | A nested URL (`vfszip:file:///a.zip!/dir`) reaches the factory whole | `createFileSource` takes a value starting with the root URI as a path | Not yet: no archive scheme is built |
+| A17 | A scheme whose optional library is missing: sftp is dropped (connect says the URI is "a relative path"), ftp throws NoClassDefFoundError, and the manager made for that connect stays open | connect checks for the library's class first (`libraryClass()`) and throws an IOException naming the jar to add, e.g. "vfssftp needs JSch (com.github.mwiede:jsch) on the class path"; a connect that fails in any way, Errors included, closes its manager | `withoutJSch`, `withoutCommonsNet` (the message, twice, and still disconnected); the manager closed on an Error: not on its own |
 
 ### B. vfssftp (`VfsSftpFileSourceFactory`)
 
@@ -169,7 +170,7 @@ sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src
 | B5 | A permission change sends the whole stat back (size, owner, group, times, mode) [18] | A chmod with only the mode, from the server's mode read just before, special bits kept, on VFS's channel reached by reflection; VFS's setters if that fails (DESIGN 10.5) | `aFileItsOwnerCantReadCanBeChanged`, `aChangeMadeElsewhereIsKept`; the special bits can't be tested on MINA (Java can't hold them) |
 | B6 | The group's and other users' bits can't be set alone | Each set alone by that chmod (DESIGN 10.6) | `groupAndOtherBitsAlone`, `TestVfsSftp.testPermissions`, `VfsSftpNioProviderTests`: `testFileAttributes`, `testCreateDir` |
 | B7 | `knownHosts` and key files must be `java.io.File` | `knownHosts` is a local file (as in parley-files-sftp); a key is given to VFS as bytes | `aKnownHostKeyIsAccepted`; `VfsSftpLoginTest`: `aKeyFileLogsIn` (OpenSSH), `aPemKeyFileLogsIn`, `aPastedKeyLogsIn`, `aMissingKeyFileSaysWhichFile` |
-| B8 | JSch needed on the class path to load anything | JSch is used from nested classes only, so the registry loads the factory without it | Not tested |
+| B8 | JSch needed on the class path to load anything | JSch is used from nested classes only, so the registry loads the factory without it | `VfsOptionalLibrariesTest.withoutJSch` (a class loader without JSch: all three factories register and show their settings; vfsftp works) |
 | B9 | A key login also tries the password, and with no key given, `~/.ssh/id_rsa` | A key or agent login tries only keys (`preferredAuthentications` `publickey`, no identities of VFS's own) | `aKeyTheServerDoesntKnowIsRefusedAndNoPasswordIsTried`; `theAgentLogsIn` (with a wrong password set) |
 | B10 | No ssh-agent login of its own (VFS takes a JSch `IdentityRepository` through `setIdentityRepositoryFactory`) | `auth` = `Agent`: JSch's `AgentIdentityRepository` on the running agent, found as parley-files-sftp's jsch provider finds it; an error naming SSH_AUTH_SOCK if there is none | `theAgentLogsIn`, `withNoAgentRunningAgentLoginSaysSo`, `agentIsAChoiceAndRoundTrips` |
 
@@ -190,12 +191,12 @@ sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src
 | C11 | No owner, group or other bits in VFS's API [17] | The nine bits from the listing entry (private `ftpFile`) by reflection | `VfsFtpPermissionBitsTest` (skipped as root: D6) |
 | C12 | No ACCT, no writing at a position | `account` and `storeAtOffset` aren't offered; a saved connection with them still opens | `settingsAreParleyFilesFtps` |
 | C13 | Can't set a permission bit or a time | The setters return false | `TestVfsFtp.testPermissions`, `timesCantBeSetButAreReadToTheSecond` |
-| C14 | commons-net needed on the class path to load anything | commons-net is used from a nested class only | Not tested |
+| C14 | commons-net needed on the class path to load anything | commons-net is used from a nested class only | `VfsOptionalLibrariesTest.withoutCommonsNet` (without commons-net: all three register; vfssftp works) |
 
 ### D. Tests that don't run, and why
 
-With the test server each class starts: as an ordinary user 177 tests, 29 skipped, none failing (with or without an
-ssh-agent: D10); as root 171.
+With the test server each class starts: as an ordinary user 185 tests, 29 skipped, none failing (with or without an
+ssh-agent: D10); as root 179.
 
 | # | Test | Skipped for | Count |
 |---|---|---|---|

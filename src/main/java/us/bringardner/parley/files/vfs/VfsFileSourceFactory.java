@@ -92,6 +92,37 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 	 */
 	protected abstract void configure(FileSystemOptions options) throws IOException;
 
+	/**
+	 * The class this scheme's own library must provide, for a scheme whose library is an optional
+	 * dependency (sftp: JSch; ftp, ftps: commons-net); null when VFS needs nothing more. Without it,
+	 * VFS either drops the scheme (sftp: an unknown scheme, reported as a "relative path") or fails
+	 * with a NoClassDefFoundError (ftp), so connect checks for it first.
+	 * @return a class name, or null
+	 */
+	protected String libraryClass() {
+		return null;
+	}
+
+	/** @return the library {@link #libraryClass()} comes from, as an error names it: its name and Maven coordinates */
+	protected String libraryName() {
+		return null;
+	}
+
+	/** Throws an IOException naming the library to add when the scheme's isn't on the class path. */
+	private void checkLibrary() throws IOException {
+		String cls = libraryClass();
+		if( cls == null ) {
+			return;
+		}
+		try {
+			Class.forName(cls, false, getClass().getClassLoader());
+		} catch (ClassNotFoundException | LinkageError e) {
+			IOException ex = new IOException(getTypeId() + " needs " + libraryName() + " on the class path (" + cls + " is missing)");
+			ex.initCause(e);
+			throw ex;
+		}
+	}
+
 	/** @return the user to log in as, or null if the scheme has none (an archive) */
 	protected String userName() {
 		return null;
@@ -155,6 +186,7 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 		if( isConnected() ) {
 			return true;
 		}
+		checkLibrary();
 		StandardFileSystemManager m = new StandardFileSystemManager();
 		m.setLogger(new VfsLog(this));
 		try {
@@ -170,7 +202,8 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 			manager = m;
 			root = r;
 			return true;
-		} catch (IOException | RuntimeException e) {
+		} catch (IOException | RuntimeException | Error e) {
+			// whatever failed, Errors too, the manager made for this connect is closed
 			m.close();
 			throw e;
 		}

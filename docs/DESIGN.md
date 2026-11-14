@@ -532,3 +532,31 @@ saved sftp connection works as a vfssftp one.
 6. **Found while testing.** JSch reads every key format ssh-keygen writes (OpenSSH, PEM PKCS#1 and SEC1, PKCS#8) for
    RSA, ECDSA and Ed25519. An ECDSA key in PKCS#8 written by Java's `getEncoded()` is refused ("invalid privatekey"):
    it leaves out the public key, which ssh-keygen's PKCS#8 has and JSch needs. The PEM tests use RSA for that reason.
+
+## 13. A missing optional library, and A1, A11, A12 tested (2026-11-14)
+
+Branch `vfs-project2`. README items A1, A11, A12, B8 and C14 had no test of their own; now each has.
+
+1. **Loading without a library (B8, C14).** `VfsOptionalLibrariesTest` runs parley-files and this module in a class
+   loader of its own, made from the test class path without JSch, then without commons-net. Every factory loads,
+   registers and shows its settings without the other scheme's library, and the other scheme works (vfsftp without
+   JSch, vfssftp without commons-net), so the nested-class rule holds.
+2. **Found: connecting without the scheme's own library failed badly.** vfssftp without JSch: VFS leaves out its sftp
+   provider (`providers.xml` requires JSch), and the root URI then fails as "a relative path". vfsftp and vfsftps
+   without commons-net: `FtpFileSystemConfigBuilder` needs commons-net to load, so `configure` threw
+   `NoClassDefFoundError` out of `connect()`, and `connectImpl` (which closed its manager only on an IOException or a
+   RuntimeException) left that connect's manager open.
+3. **Decided 12:21 ET, and built.** Each scheme names the class its optional library must provide (`libraryClass()`:
+   `com.jcraft.jsch.JSch` for vfssftp, `org.apache.commons.net.ftp.FTPClient` for vfsftp and vfsftps) and the library
+   (`libraryName()`); `connectImpl` checks for it before making the manager and throws an IOException naming the jar to
+   add ("vfssftp needs JSch (com.github.mwiede:jsch) on the class path (com.jcraft.jsch.JSch is missing)"). A connect
+   that fails in any way, Errors included, closes its manager. A scheme VFS serves with its own classes (archives, a
+   later http) returns null and is not checked.
+4. **A1, A11, A12** are tested in `AbstractVfsTrapsTest`, so for both vfssftp and vfsftp: two factories have different
+   managers and disconnecting one leaves the other's files and an open stream working; owner, group, link target,
+   access and creation times are unknown (a principal with no name, null, 0) and can't be set; a name starting with
+   "." is hidden, a file's or a folder's.
+5. **Results.** As an ordinary user 185 tests, 29 skipped, none failing, with and without an ssh-agent; as root 179,
+   29 skipped. Not tested on its own: that a connect failing with an Error closes its manager (the library check now
+   comes first, so no test reaches that path).
+

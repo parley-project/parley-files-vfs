@@ -22,6 +22,8 @@ package us.bringardner.parley.files.vfs;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -30,6 +32,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 
 import org.junit.jupiter.api.AfterAll;
@@ -232,5 +235,85 @@ public abstract class AbstractVfsTrapsTest {
 		assertFalse(c.atomicReplace());
 		assertFalse(c.durableSync());
 		assertTrue(c.orderedOperations());
+	}
+
+	/** This factory's VFS manager (its private field). */
+	private static Object manager(VfsFileSourceFactory f) throws ReflectiveOperationException {
+		Field m = VfsFileSourceFactory.class.getDeclaredField("manager");
+		m.setAccessible(true);
+		return m.get(f);
+	}
+
+	/**
+	 * README A1: each factory has a VFS manager of its own, never VFS's one for the whole JVM, so
+	 * disconnecting one factory leaves another's files and open streams working.
+	 */
+	@Test
+	void eachFactoryHasAVfsManagerOfItsOwn() throws Exception {
+		FileSource f = dir.getChild("manager.txt");
+		write(f, "0123456789");
+		VfsFileSourceFactory other = server.connect();
+		try {
+			Object mine = manager(factory);
+			assertNotSame(mine, manager(other));
+			assertEquals("0123456789", read(other.createFileSource(f.getAbsolutePath())));
+			try (InputStream in = f.getInputStream()) {
+				assertEquals('0', in.read());
+				other.disConnect();
+				assertFalse(other.isConnected());
+				assertEquals("123456789", new String(in.readAllBytes(), StandardCharsets.UTF_8),
+						"this factory's stream, open when the other disconnected, reads on");
+			}
+			assertTrue(factory.isConnected());
+			assertNotNull(mine);
+			assertEquals(mine, manager(factory), "this factory kept its manager");
+			assertEquals("0123456789", read(f));
+		} finally {
+			other.disConnect();
+		}
+		assertTrue(f.delete());
+	}
+
+	/**
+	 * README A11: VFS has no owner, group, link target, access or creation time, so they are
+	 * unknown: a principal with no name, null and 0, and they can't be set. The modified time is known.
+	 */
+	@Test
+	void ownerGroupLinkAndOtherTimesAreUnknown() throws IOException {
+		FileSource f = dir.getChild("unknowns.txt");
+		write(f, "u");
+		for (FileSource each : new FileSource[] { f, dir }) {
+			assertNull(each.getOwner().getName(), "owner of " + each);
+			assertNull(each.getGroup().getName(), "group of " + each);
+			assertNull(each.getLinkedTo(), "link target of " + each);
+			assertEquals(0L, each.lastAccessTime(), "access time of " + each);
+			assertEquals(0L, each.getCreateDate(), "creation time of " + each);
+		}
+		assertFalse(f.setOwner(() -> "root"));
+		assertFalse(f.setGroup(() -> "root"));
+		assertTrue(f.lastModified() > 0, "the modified time is known");
+		assertTrue(f.delete());
+	}
+
+	/** README A12: a name starting with "." is hidden, a file's or a directory's (sftp and ftp have no flag of their own). */
+	@Test
+	void aNameStartingWithADotIsHidden() throws IOException {
+		FileSource hidden = dir.getChild(".hidden.txt");
+		FileSource shown = dir.getChild("shown.txt");
+		FileSource hiddenDir = dir.getChild(".hidden-dir");
+		write(hidden, "h");
+		write(shown, "s");
+		assertTrue(hiddenDir.mkdir());
+		try {
+			assertTrue(hidden.isHidden());
+			assertTrue(hiddenDir.isHidden());
+			assertFalse(shown.isHidden());
+			assertFalse(dir.isHidden());
+			assertFalse(dir.getChild("x.y").isHidden(), "a dot inside the name doesn't count");
+		} finally {
+			assertTrue(hidden.delete());
+			assertTrue(shown.delete());
+			assertTrue(hiddenDir.delete());
+		}
 	}
 }

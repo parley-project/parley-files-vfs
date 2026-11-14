@@ -175,6 +175,17 @@ public class VfsFtpFileSourceFactory extends VfsFileSourceFactory {
 		return password;
 	}
 
+	/** vfsftps too: VFS's ftp and ftps run on commons-net. */
+	@Override
+	protected String libraryClass() {
+		return "org.apache.commons.net.ftp.FTPClient";
+	}
+
+	@Override
+	protected String libraryName() {
+		return "commons-net (commons-net:commons-net)";
+	}
+
 	@Override
 	protected String rootUri() throws IOException {
 		if( host == null ) {

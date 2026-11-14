@@ -165,6 +165,16 @@ public class VfsSftpFileSourceFactory extends VfsFileSourceFactory {
 		return user;
 	}
 
+	@Override
+	protected String libraryClass() {
+		return "com.jcraft.jsch.JSch";
+	}
+
+	@Override
+	protected String libraryName() {
+		return "JSch (com.github.mwiede:jsch)";
+	}
+
 	/** The password only when logging in with one. */
 	@Override
 	protected String passwordValue() {
