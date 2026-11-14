@@ -289,12 +289,13 @@ public class VfsFileSource extends BaseObject implements FileSource {
 
 	@Override
 	public boolean exists() throws IOException {
-		return fo().exists();
+		return factory.existsOf(fo());
 	}
 
 	@Override
 	public boolean isFile() throws IOException {
-		return fo().isFile();
+		FileObject f = fo();
+		return factory.existsOf(f) && f.isFile();
 	}
 
 	@Override
@@ -311,13 +312,13 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	@Override
 	public long length() throws IOException {
 		FileObject f = fo();
-		return f.isFile() ? f.getContent().getSize() : 0L;
+		return f.isFile() && factory.existsOf(f) ? factory.lengthOf(f) : 0L;
 	}
 
 	@Override
 	public long lastModified() throws IOException {
 		FileObject f = fo();
-		if( !f.exists() || !factory.hasCapability(Capability.GET_LAST_MODIFIED) ) {
+		if( !factory.existsOf(f) || !factory.hasCapability(Capability.GET_LAST_MODIFIED) ) {
 			return 0L;
 		}
 		return factory.lastModifiedOf(f);
@@ -344,7 +345,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	@Override
 	public boolean setLastModifiedTime(long time) throws IOException {
 		FileObject f = fo();
-		if( !f.exists() ) {
+		if( !factory.existsOf(f) ) {
 			return false;
 		}
 		Capability c = f.isFolder() ? Capability.SET_LAST_MODIFIED_FOLDER : Capability.SET_LAST_MODIFIED_FILE;
@@ -424,25 +425,25 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	@Override
 	public boolean canRead() throws IOException {
 		FileObject f = fo();
-		return f.exists() && f.isReadable();
+		return factory.existsOf(f) && f.isReadable();
 	}
 
 	@Override
 	public boolean canWrite() throws IOException {
 		FileObject f = fo();
-		return f.exists() && f.isWriteable();
+		return factory.existsOf(f) && f.isWriteable();
 	}
 
 	@Override
 	public boolean canExecute() throws IOException {
 		FileObject f = fo();
-		return f.exists() && f.isExecutable();
+		return factory.existsOf(f) && f.isExecutable();
 	}
 
 	/** One of the nine bits from the scheme's hook; false if it isn't known. */
 	private boolean bit(int mask) throws IOException {
 		FileObject f = fo();
-		if( !f.exists() ) {
+		if( !factory.existsOf(f) ) {
 			return false;
 		}
 		Integer mode = factory.modeOf(f);
@@ -497,7 +498,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	@Override
 	public boolean setReadable(boolean b, boolean ownerOnly) throws IOException {
 		FileObject f = fo();
-		if( !f.exists() ) {
+		if( !factory.existsOf(f) ) {
 			return false;
 		}
 		Boolean ret = changeMode(f, b, ownerOnly ? 0400 : 0444);
@@ -507,7 +508,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	@Override
 	public boolean setWritable(boolean b, boolean ownerOnly) throws IOException {
 		FileObject f = fo();
-		if( !f.exists() ) {
+		if( !factory.existsOf(f) ) {
 			return false;
 		}
 		Boolean ret = changeMode(f, b, ownerOnly ? 0200 : 0222);
@@ -517,7 +518,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	@Override
 	public boolean setExecutable(boolean b, boolean ownerOnly) throws IOException {
 		FileObject f = fo();
-		if( !f.exists() ) {
+		if( !factory.existsOf(f) ) {
 			return false;
 		}
 		Boolean ret = changeMode(f, b, ownerOnly ? 0100 : 0111);
@@ -527,7 +528,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	/** BITS on or off through the scheme's own way; false if it has none (VFS can't set them alone). */
 	private boolean changeModeAlone(boolean on, int bits) throws IOException {
 		FileObject f = fo();
-		if( !f.exists() ) {
+		if( !factory.existsOf(f) ) {
 			return false;
 		}
 		Boolean ret = changeMode(f, on, bits);
@@ -624,7 +625,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	@Override
 	public boolean createNewFile() throws IOException {
 		FileObject f = fo();
-		if( f.exists() ) {
+		if( factory.existsOf(f) ) {
 			return false;
 		}
 		FileSource parent = getParentFile();
@@ -643,7 +644,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	@Override
 	public boolean mkdir() throws IOException {
 		FileObject f = fo();
-		if( f.exists() ) {
+		if( factory.existsOf(f) ) {
 			return false;
 		}
 		FileSource parent = getParentFile();
@@ -656,7 +657,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 		} catch (FileSystemException e) {
 			// someone else may have made it meanwhile
 			f.refresh();
-			if( f.exists() ) {
+			if( factory.existsOf(f) ) {
 				return false;
 			}
 			throw e;
@@ -668,7 +669,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	@Override
 	public boolean mkdirs() throws IOException {
 		FileObject f = fo();
-		if( f.exists() ) {
+		if( factory.existsOf(f) ) {
 			return false;
 		}
 		require(Capability.CREATE, "create directories");
@@ -680,7 +681,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	@Override
 	public boolean delete() throws IOException {
 		FileObject f = fo();
-		if( !f.exists() ) {
+		if( !factory.existsOf(f) ) {
 			return false;
 		}
 		require(Capability.DELETE, "delete");
@@ -698,7 +699,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 		}
 		FileObject from = fo();
 		FileObject to = ((VfsFileSource) dest).fo();
-		if( !from.exists() || to.exists() || !from.canRenameTo(to) ) {
+		if( !factory.existsOf(from) || factory.existsOf(to) || !from.canRenameTo(to) ) {
 			return false;
 		}
 		FileSource destParent = dest.getParentFile();
@@ -776,6 +777,10 @@ public class VfsFileSource extends BaseObject implements FileSource {
 				}
 				progress.setProgress(ret.size());
 			}
+			if( !factory.existsOf(kid) ) {
+				// vfsgz and vfsbz2 list their one file even when the compressed file isn't there
+				continue;
+			}
 			String name = kid.getName().getBaseName();
 			ret.add(new VfsFileSource(factory, normalize(path + "/" + name), kid));
 		}
@@ -796,7 +801,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 		if( f.isFolder() ) {
 			throw new FileNotFoundException(path + " (Is a directory)");
 		}
-		if( !f.exists() ) {
+		if( !factory.existsOf(f) ) {
 			throw new FileNotFoundException(path + " (No such file or directory)");
 		}
 		return f;
@@ -875,6 +880,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 			throw new FileNotFoundException(path + " (No such file or directory)");
 		}
 		require(Capability.WRITE_CONTENT, "write");
+		factory.checkWriteOf(f, path);
 		if( append && !factory.hasCapability(Capability.APPEND_CONTENT) ) {
 			throw new IOException(factory.getTypeId() + " can't append to a file (" + path + ")");
 		}
@@ -902,11 +908,11 @@ public class VfsFileSource extends BaseObject implements FileSource {
 			throw new IOException(factory.getTypeId() + " can't " + (write ? "write" : "read") + " at a position in a file (" + path + ")");
 		}
 		FileObject f = fo();
-		if( f.isFolder() || (!write && !f.exists()) ) {
+		if( f.isFolder() || (!write && !factory.existsOf(f)) ) {
 			throw new FileNotFoundException(path + (f.isFolder() ? " (Is a directory)" : " (No such file or directory)"));
 		}
-		if( write && !f.exists() ) {
-			if( !createNewFile() && !f.exists() ) {
+		if( write && !factory.existsOf(f) ) {
+			if( !createNewFile() && !factory.existsOf(f) ) {
 				throw new FileNotFoundException(path + " (can't be created)");
 			}
 		}

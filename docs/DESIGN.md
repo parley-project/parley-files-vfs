@@ -631,3 +631,57 @@ random access, now `writingAtAPositionOnlyWhereTheSchemeCan`), and, since these 
 vfstmp shared by name, separate by name, gone with the last factory (vfstmp's files deleted from the disk), URLs;
 vfsres reading, listing, an empty "/", a missing resource, read only (A14) and its URL. vfsram skips what sets
 permission bits (the NIO suite's `testFileAttributes` and `testCreateDir`) and the forced write (stored at close).
+
+## 15. The archive schemes (2026-11-14)
+
+`vfszip`, `vfsjar`, `vfstar`, `vfstgz` and `vfstbz2` (read only, as VFS has them: 2.1), and `vfsgz` and `vfsbz2`, which
+hold one file. One base, `VfsArchiveFileSourceFactory`; `VfsCompressedFileSourceFactory` under it for gz and bz2.
+tar, tgz, tbz2 and bz2 need commons-compress (VFS's optional dependency, 1.27.1, the version VFS 2.10.0 is built with);
+connecting without it says so (`libraryClass()`, 13.3). zip, jar and gz need nothing.
+
+Checked against 2.10.0: every format lists its folders, reads, and gives each entry's time; only gz and bz2 have
+`WRITE_CONTENT`; jar adds its manifest's attributes; an archive inside an archive works
+(`zip:zip:file:///outer.zip!/t.zip!/`); a missing archive fails ("Could not replicate ... as it does not exist").
+
+### 15.1 The archive setting (decided 2026-11-14)
+
+**Decided: a local path or any VFS URI.** `archive` is a local file (`/tmp/a.zip`, `C:\a.zip`) or a VFS URI
+(`file:///tmp/a.zip`, `sftp://host/a.zip`, `zip:file:///outer.zip!/inner.zip`); a value whose scheme has two
+characters or more is a URI, so a Windows drive is a path. A path is made a `file:` URI, so the two name the same
+file system. The root URI is `<scheme>:<archive>!/`; the URL is VFS's with `vfs` in front
+(`vfszip:file:///tmp/a.zip!/dir`), whose archive is what comes before the last `!/` (README A16); a `filesource:` URL
+carries it as `archive`. A nested server's password in the URI goes to VFS but never into a URL. An archive on any
+Parley FileSource stays Q4 (later).
+
+### 15.2 Read only
+
+Every write on the five archive types throws the read-only IOException (README A14): write, create, mkdir, delete and
+rename; setting a time returns false.
+
+### 15.3 vfsgz and vfsbz2 (decided 2026-11-14)
+
+A gz or bz2 file system holds one file, named after the compressed file without its extension (`a.txt.gz` holds
+`/a.txt`). **Decided: it can be read and written, and the compressed file may be missing: writing its file makes it.**
+Writing replaces the whole compressed file (VFS writes it through gzip or bzip2). Checked, and handled with three new
+base hooks (`exists`, `length`, `checkWrite`):
+
+1. VFS says the one file exists, and lists it, when the compressed file doesn't exist. Here it exists, and is listed,
+   only when the compressed file does; "/" always exists.
+2. VFS writes any name (`/other.txt`) over the compressed file. Here only the one file can be written; another name
+   throws ("vfsgz holds one file, /a.txt: /other.txt can't be written").
+3. VFS gives the file's length as -1 (unknown). **Decided: counted** by reading it through once, and kept while the
+   compressed file's time and size are unchanged.
+
+Creating with `createNewFile()`, deleting and renaming are refused (read only: VFS has no `CREATE`, `DELETE` or
+`RENAME` for them); writing the file is how it is made.
+
+### 15.4 Tests
+
+`TestArchives` writes the same tree (a.txt, dir/b.txt, an empty folder, known times) as zip, jar, tar, tgz and tbz2.
+`VfsArchiveTest`: each type reads the tree (names, contents, lengths, times, reading from a position) and refuses
+every write with the archive unchanged; a local path and its URI are one file system; an archive inside an archive; a
+missing archive fails the connect naming it; `vfszip:` and `vfstgz:` URLs open through `getFileSource` and as a
+`java.net.URL` (A16); `filesource:` URLs, settings and copies; a nested password kept out of URLs.
+`VfsCompressedTest` (gz and bz2): reading and the counted length; writing replaces the compressed file and the length
+is counted again; another name refused; a missing compressed file made by writing. `VfsOptionalLibrariesTest`
+gains `withoutCommonsCompress`. The shared FileSource suites aren't run on the archives: they write.

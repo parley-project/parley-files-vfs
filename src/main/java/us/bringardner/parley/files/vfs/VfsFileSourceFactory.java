@@ -170,6 +170,38 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 	}
 
 	/**
+	 * Whether FO exists: by default VFS's answer. vfsgz and vfsbz2 answer for their one file, which
+	 * VFS says exists before the compressed file does (docs/DESIGN.md, 15.3).
+	 * @param fo the file
+	 * @return true if it exists
+	 * @throws IOException if it can't be told
+	 */
+	protected boolean exists(FileObject fo) throws IOException {
+		return fo.exists();
+	}
+
+	/**
+	 * A file's length: by default VFS's. vfsgz and vfsbz2 count it, as VFS doesn't know it (15.3).
+	 * @param fo a file that exists
+	 * @return the length in bytes
+	 * @throws IOException if it can't be read
+	 */
+	protected long length(FileObject fo) throws IOException {
+		return fo.getContent().getSize();
+	}
+
+	/**
+	 * Refuses a write the scheme can't make although VFS would (vfsgz and vfsbz2: any name but their
+	 * one file, which VFS would write over the whole compressed file). Nothing by default.
+	 * @param fo the file to be written
+	 * @param path its path
+	 * @throws IOException if it can't be written
+	 */
+	protected void checkWrite(FileObject fo, String path) throws IOException {
+		// any file VFS can write
+	}
+
+	/**
 	 * Whether the file system applies operations in one order (one server, one archive), for
 	 * {@link us.bringardner.parley.files.FileSourceCapabilities#orderedOperations()}. The default is
 	 * true.
@@ -345,6 +377,21 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 	/** {@link #lastModified(FileObject)} for VfsFileSource */
 	long lastModifiedOf(FileObject fo) throws IOException {
 		return lastModified(fo);
+	}
+
+	/** {@link #exists(FileObject)} for VfsFileSource */
+	boolean existsOf(FileObject fo) throws IOException {
+		return exists(fo);
+	}
+
+	/** {@link #length(FileObject)} for VfsFileSource */
+	long lengthOf(FileObject fo) throws IOException {
+		return length(fo);
+	}
+
+	/** {@link #checkWrite(FileObject, String)} for VfsFileSource */
+	void checkWriteOf(FileObject fo, String path) throws IOException {
+		checkWrite(fo, path);
 	}
 
 	/** {@link #orderedOperations()} for VfsFileSource */

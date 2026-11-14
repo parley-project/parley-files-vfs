@@ -36,6 +36,8 @@ module doesn't depend on them: add the one for each scheme you use.
 | `vfsres` (`res`) | nothing | no (read only) |
 | `vfszip`, `vfsjar` (`zip`, `jar`) | nothing | no (read only) |
 | `vfstar`, `vfstgz`, `vfstbz2` (`tar`, `tgz`, `tbz2`) | `org.apache.commons:commons-compress` | no (read only) |
+| `vfsgz` (`gz`) | nothing | its one file |
+| `vfsbz2` (`bz2`) | `org.apache.commons:commons-compress` | its one file |
 | `vfshttp`, `vfshttps` (`http`, `https`) | `org.apache.httpcomponents.client5:httpclient5` | no (read only, no listing) |
 | `vfswebdav4`, `vfswebdav4s` (`webdav4`, `webdav4s`) | `org.apache.commons:commons-vfs2-jackrabbit2` (VFS's WebDAV provider is its own artifact) | yes (random access: read only) |
 
@@ -155,6 +157,21 @@ FileSource props = FileSourceFactory.getFileSource("vfsres:/META-INF/MANIFEST.MF
 
 vfsfile and vfstmp read and set every permission bit, each alone, where the disk has POSIX bits; vfsram has none.
 
+## Using the archive schemes
+
+`vfszip`, `vfsjar`, `vfstar`, `vfstgz` and `vfstbz2` read an archive, read only. Their one setting, `archive`, is a
+local file (`/tmp/a.zip`, `C:\a.zip`) or any VFS URI (`file:///tmp/a.zip`, `sftp://host/a.zip`, or an archive in an
+archive: `zip:file:///outer.zip!/inner.zip`); paths are inside the archive. Their URL is VFS's with `vfs` in front.
+
+```java
+FileSource b = FileSourceFactory.getFileSource("vfszip:file:///tmp/a.zip!/dir/b.txt");
+FileSource inTgz = FileSourceFactory.getFileSource("vfstgz:file:///tmp/a.tgz!/dir/b.txt");
+```
+
+`vfsgz` and `vfsbz2` hold one file, named after the compressed file without its extension (`a.txt.gz` holds
+`/a.txt`). It can be read and written; writing replaces the whole compressed file, and makes it if it isn't there yet.
+Its length is counted by reading it through (VFS doesn't know it), once per change.
+
 ## Workarounds and skipped tests
 
 Everything parley-files-vfs does differently from VFS left to itself, and every test that doesn't run, with where it is
@@ -179,9 +196,9 @@ sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src
 | A11 | Owner, group, link target, access and creation times unknown | A principal with no name; `getLinkedTo()` null; times 0 | `ownerGroupLinkAndOtherTimesAreUnknown` (a file and a folder; the setters return false) |
 | A12 | `isHidden()` not answered by every provider | VFS's answer, or a name starting with "." | `aNameStartingWithADotIsHidden` (a file and a folder; a dot inside the name doesn't count) |
 | A13 | A `vfs<scheme>:` URL has no `URLConnection` (parley-files' takes only `filesource:`) [11] | `VfsUrlConnection` opens it with `getFileSource(URL)` and disconnects that factory when its stream closes | `aVfsUrlOpensAsAJavaNetUrl` (both factory tests) |
-| A14 | A write on a read-only file system (an archive) fails with VFS's message | An IOException saying the file system is read only | `VfsLocalFactoryTest.vfsresIsReadOnly` |
+| A14 | A write on a read-only file system (an archive) fails with VFS's message | An IOException saying the file system is read only | `VfsLocalFactoryTest.vfsresIsReadOnly`, `VfsArchiveTest.readOnly` (every archive type) |
 | A15 | A file system that can't list (http) throws | An empty list (Q6) | Not yet: no http scheme is built |
-| A16 | A nested URL (`vfszip:file:///a.zip!/dir`) reaches the factory whole | `createFileSource` takes a value starting with the root URI as a path | Not yet: no archive scheme is built |
+| A16 | A nested URL (`vfszip:file:///a.zip!/dir`) reaches the factory whole | `createFileSource` takes a value starting with the root URI as a path; the archive is what comes before the last `!/` | `VfsArchiveTest.aVfsUrlOpens` (zip, tgz) |
 | A17 | A scheme whose optional library is missing: sftp is dropped (connect says the URI is "a relative path"), ftp throws NoClassDefFoundError, and the manager made for that connect stays open | connect checks for the library's class first (`libraryClass()`) and throws an IOException naming the jar to add, e.g. "vfssftp needs JSch (com.github.mwiede:jsch) on the class path"; a connect that fails in any way, Errors included, closes its manager | `withoutJSch`, `withoutCommonsNet` (the message, twice, and still disconnected); the manager closed on an Error: not on its own |
 
 | A18 | A thread-safe copy (a new manager) of a ram or tmp factory would see an empty file system | vfsram and vfstmp share one manager per type and `name`, counted, closed by the last factory to disconnect (DESIGN 14.2) | `VfsLocalFactoryTest`: `ramAndTmpAreSharedByName`, `ramAndTmpAreGoneWhenTheLastDisconnects`; `AbstractVfsTrapsTest.eachFactoryHasAVfsManagerOfItsOwn` (the same manager for one name) |
@@ -229,6 +246,16 @@ sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src
 | E2 | Only what the connected user can do, no owner, group or other bits [9] | vfsfile and vfstmp read and set the nine bits with java.nio, each alone (`LocalBits`; a tmp file's path by reflection on `LocalFile.getLocalFile()`, false bits, logged once, if that fails) | `VfsFilePermissionBitsTest`, `TestVfsFile` and `TestVfsTmp`'s `testPermissions`, their NIO suites' `testFileAttributes` and `testCreateDir` |
 | E3 | `ram` has no permission bits | They read false and every setter returns false | `TestVfsRam.testPermissions` |
 | E4 | `res:/` is refused; `res:a/b` becomes the jar or folder holding it [20] | "/" is an empty folder of the factory's own; `/a/b` is the resource `a/b`; a missing one doesn't exist; read only, whatever its jar or folder could do | `vfsresReadsTheClassPath`, `vfsresIsReadOnly`, `vfsresUrls` |
+
+### F. The archives (`VfsArchiveFileSourceFactory`, `VfsCompressedFileSourceFactory`)
+
+| # | VFS left to itself | What parley-files-vfs does | Tested by |
+|---|---|---|---|
+| F1 | tar, tgz, tbz2 and bz2 are dropped without commons-compress (an unknown scheme) | connect says which jar to add (`libraryClass()`) | `VfsOptionalLibrariesTest.withoutCommonsCompress` (zip and gz still work) |
+| F2 | The archive is a URI | A local path or a VFS URI; a path is made a `file:` URI, so both are one file system; a nested server's password stays out of URLs | `archiveIsALocalPathOrAVfsUri`, `anArchiveInsideAnArchive`, `aPasswordInTheArchiveUriStaysOutOfUrls` |
+| F3 | gz and bz2: the one file exists, and is listed, before the compressed file does [21] | It exists only when the compressed file does; writing it makes the compressed file | `VfsCompressedTest.writingMakesAMissingCompressedFile` |
+| F4 | gz and bz2: any name is written over the compressed file [21] | Only the one file can be written | `onlyItsOneFileCanBeWritten` |
+| F5 | gz and bz2: the file's length is -1 [21] | Counted by reading it through, kept while the compressed file is unchanged | `readsAndCountsItsOneFile`, `writingReplacesTheCompressedFile` |
 
 ### D. Tests that don't run, and why
 
@@ -311,3 +338,6 @@ Found by checking Commons VFS 2.10.0's code and its capabilities at run time (20
 20. **VFS's `res` isn't a file system.** `res:/` is refused, and `res:a/b.txt` turns into the jar entry or file that
     holds the resource (`jar:file:///lib/x.jar!/a/b.txt`), so a folder lists only the first class path entry that has
     it. VFS's `ram` and `tmp` file systems belong to a manager and go when it closes (`tmp`'s folder is deleted).
+21. **VFS's gz and bz2 hold one file and get it wrong at the edges.** The file is named after the compressed file
+    without its extension. VFS says it exists, and lists it, before the compressed file exists; it writes any name
+    given (`gz:file:///a.txt.gz!/other.txt`) over the compressed file; and it gives the file's length as -1.

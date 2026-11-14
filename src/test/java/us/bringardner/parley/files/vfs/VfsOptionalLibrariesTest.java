@@ -44,7 +44,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
- * JSch and commons-net are optional (README B8, C14): an application that uses only vfsftp has no
+ * JSch, commons-net and commons-compress are optional (README B8, C14, F1): an application that uses only vfsftp has no
  * JSch, and one that uses only vfssftp has no commons-net, yet parley-files' registry creates every
  * factory parley-files-vfs lists. So each factory must load, and say its type id and settings,
  * without the other scheme's library, and the other scheme must work.
@@ -128,7 +128,7 @@ public class VfsOptionalLibrariesTest {
 	}
 
 	private static final String FACTORY = "us.bringardner.parley.files.FileSourceFactory";
-	/** How many settings each factory shows (as VfsSftpFactoryTest and VfsFtpFactoryTest check). */
+	/** How many settings each factory shows (as VfsSftpFactoryTest and VfsFtpFactoryTest check; an archive's: one). */
 	private static final int SFTP_SETTINGS = 10;
 	private static final int FTP_SETTINGS = 6;
 	private static final int FTPS_SETTINGS = 5;
@@ -240,6 +240,43 @@ public class VfsOptionalLibrariesTest {
 			e = connectFails(newFactory(w, "vfsftps"), tls);
 			assertTrue(e.getMessage().startsWith("vfsftps needs commons-net"), e.getMessage());
 			works(newFactory(w, "vfssftp"), sftp.properties(), "no-commons-net.txt");
+		}
+	}
+
+	/**
+	 * An application without commons-compress: vfstar, vfstgz, vfstbz2 and vfsbz2 load but can't
+	 * connect, saying which jar to add; vfszip and vfsgz, which need nothing, work.
+	 */
+	@Test
+	void withoutCommonsCompress() throws Exception {
+		java.nio.file.Path dir = java.nio.file.Paths.get(us.bringardner.parley.files.test.FileSourceTestSupport.scratchDir("vfs-no-compress"));
+		java.nio.file.Files.createDirectories(dir);
+		java.nio.file.Path zip = TestArchives.write("zip", dir.resolve("t.zip"));
+		java.nio.file.Path gz = TestArchives.compressed("gz", dir.resolve("t.txt.gz"), "gz");
+		try (Without w = new Without("commons-compress-")) {
+			w.lacks("org.apache.commons.compress.archivers.tar.TarArchiveInputStream");
+			for (String type : new String[] { "vfstar", "vfstgz", "vfstbz2", "vfsbz2" }) {
+				Properties p = new Properties();
+				p.setProperty("archive", dir.resolve("t." + type.substring(3)).toString());
+				IOException e = connectFails(registered(w, type, 1), p);
+				assertTrue(e.getMessage().startsWith(type + " needs commons-compress (org.apache.commons:commons-compress) on the class path"),
+						e.getMessage());
+			}
+			for (String[] each : new String[][] { { "vfszip", zip.toString(), "/a.txt", "hello" }, { "vfsgz", gz.toString(), "/t.txt", "gz" } }) {
+				Object f = registered(w, each[0], 1);
+				Properties p = new Properties();
+				p.setProperty("archive", each[1]);
+				call(f, "setConnectionProperties", new Class<?>[] { Properties.class }, p);
+				try {
+					assertEquals(Boolean.TRUE, call(f, "connect"));
+					Object file = call(f, "createFileSource", new Class<?>[] { String.class }, each[2]);
+					try (InputStream in = (InputStream) call(file, "getInputStream")) {
+						assertEquals(each[3], new String(in.readAllBytes(), StandardCharsets.UTF_8));
+					}
+				} finally {
+					call(f, "disConnect");
+				}
+			}
 		}
 	}
 }

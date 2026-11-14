@@ -30,6 +30,9 @@
 		<sshd.version>2.19.0</sshd.version>
 		<!-- The version VFS 2.10.0 is built with -->
 		<commons-net.version>3.11.1</commons-net.version>
+		<!-- The version VFS 2.10.0 is built with; for vfstar, vfstgz, vfstbz2 and vfsbz2 (tests only:
+		     users of those schemes add it) -->
+		<commons-compress.version>1.27.1</commons-compress.version>
 	</properties>
 
 	<dependencyManagement>
@@ -117,6 +120,14 @@
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
 			<artifactId>junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- For the vfstar, vfstgz, vfstbz2 and vfsbz2 tests, and to write their test archives -->
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-compress</artifactId>
+			<version>${commons-compress.version}</version>
 			<scope>test</scope>
 		</dependency>
 

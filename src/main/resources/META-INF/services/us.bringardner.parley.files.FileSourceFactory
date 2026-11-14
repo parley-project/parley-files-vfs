@@ -5,3 +5,10 @@ us.bringardner.parley.files.vfs.VfsFileFileSourceFactory
 us.bringardner.parley.files.vfs.VfsTmpFileSourceFactory
 us.bringardner.parley.files.vfs.VfsRamFileSourceFactory
 us.bringardner.parley.files.vfs.VfsResFileSourceFactory
+us.bringardner.parley.files.vfs.VfsZipFileSourceFactory
+us.bringardner.parley.files.vfs.VfsJarFileSourceFactory
+us.bringardner.parley.files.vfs.VfsTarFileSourceFactory
+us.bringardner.parley.files.vfs.VfsTgzFileSourceFactory
+us.bringardner.parley.files.vfs.VfsTbz2FileSourceFactory
+us.bringardner.parley.files.vfs.VfsGzFileSourceFactory
+us.bringardner.parley.files.vfs.VfsBz2FileSourceFactory
