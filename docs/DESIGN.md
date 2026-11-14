@@ -749,3 +749,62 @@ nobody listening, and the link parser on Apache, nginx and absolute-link pages. 
 certificate for the host; one the JVM doesn't trust refused; a trusted one for another host refused; an http URL
 redirecting to https checked; VFS used directly accepting a certificate nothing trusts. `VfsOptionalLibrariesTest`
 gains `withoutHttpClient5`.
+
+## 17. vfswebdav and vfswebdavs (2026-11-14)
+
+On VFS's current WebDAV client, `webdav4` and `webdav4s` (`commons-vfs2-jackrabbit2`: httpclient 4.5 and
+jackrabbit-webdav 2.20; optional, compiled against); VFS's `webdav` and `webdav3` are Jackrabbit 1's, left out.
+Decided 2026-11-14: built on VFS with mitigations, beside Parley's own WebDAV FileSource (To-Do 17.57). Read and write;
+no append; random access read only. **Settings** as vfshttp's (`host`, `port` 80 or 443, `user`, `password`, `timeout`
+30s), now in a shared base, `VfsWebFileSourceFactory` (no user in the VFS root URI, as 16.3). URL
+`vfswebdav://tony@host:80/dav/a.txt`. VFS keeps an upload in memory until its stream is closed, then sends it (PUT).
+
+Each connection's manager gets this module's providers for `webdav4` and `webdav4s` (`VfsWebdavClient.Provider`, a
+subclass of VFS's), whose file system makes `DavFile`s (a subclass of VFS's `Webdav4FileObject`).
+
+### 17.1 Certificates
+
+VFS's WebDAV provider is its http4 provider underneath, which also builds its TLS with `TrustAllStrategy`. As 16.1:
+the chain by `VfsTrustManager`, the host by httpclient's hostname verifier, kept on. (Its login works: httpclient 4
+takes the password as a String copy, so 16.3's first bug isn't there.)
+
+### 17.2 Type and listing (decided 2026-11-14: a third mitigation)
+
+Found while testing: **VFS can't tell a folder from a file on a server that indents its PROPFIND answer** (Tomcat's
+WebdavServlet does). It casts `<D:resourcetype>`'s value to one XML node, and with whitespace around `<D:collection/>`
+Jackrabbit gives a list of nodes: a ClassCastException, so even "/" fails ("Could not determine the type"), and its
+listing uses the same code. Servers that don't indent (Apache's mod_dav, nginx) are fine. **Decided: a third
+mitigation.** `DavFile` makes its own PROPFIND (of `resourcetype` only) for its type (depth 0; 404 or 410: not there)
+and for a folder's members (depth 1), and reads a resourcetype that is one node, a list of nodes, or none. The listing
+also carries the second decided mitigation: **only the folder's own members that the server says are there**: an
+answer with no 200 propstat (VFS lists those), the folder itself, anything deeper or elsewhere are left out. Each
+member's type is set from the listing, so it isn't asked again. VFS still reads, writes, creates, deletes and renames.
+
+### 17.3 Uploads checked (decided)
+
+The first decided mitigation: once an upload's stream is closed (when VFS sends it), the file is asked for again and
+must be on the server at the size written; if not, the close throws ("vfswebdav: the server has 500 bytes of
+/short/half.txt after 1000 were written"). A base hook, `output(FileObject, OutputStream)`, wraps the stream.
+
+### 17.4 No append (decided 2026-11-14: refused)
+
+VFS's WebDAV has no `APPEND_CONTENT`. **Decided: append is refused** ("vfswebdav can't append to a file"), not
+emulated. The shared tests that append are skipped for vfswebdav, each saying why (README D14).
+
+### 17.5 Reading from the end
+
+Found with WebDAV, and true of any scheme with ranges: reading from a position at or past the end asked the server for
+a range there, which an HTTP server refuses (416), and VFS throws. `getInputStream(pos)` now gives an empty stream
+there without asking.
+
+### 17.6 Tests
+
+`VfsWebdavTestServer`: Tomcat's WebdavServlet (embedded, 10.1, test scope) on a local folder, plain or HTTPS, with a
+filter that asks for a Basic login, stores only half of an upload to `/short/`, and answers a PROPFIND of `/phantom`
+with a member that isn't there (404 propstat), one deeper and one elsewhere. Tomcat's own URL handler factory is turned
+off (it fails once parley-files has installed one), and its resource cache too (the filter writes behind it). The
+shared suites run on it (`TestVfsWebdav`, the NIO suite, the lock suite, the traps, random access); `VfsWebdavTest`:
+folders and files on a server that indents, VFS alone failing there, members left out, an upload cut short, write,
+rename and delete, a login, URLs and settings, and the resourcetype reader; `VfsWebdavsTest`: a trusted certificate
+(read and write), one the JVM doesn't trust refused, a trusted one for another host refused;
+`VfsOptionalLibrariesTest.withoutJackrabbit2`.

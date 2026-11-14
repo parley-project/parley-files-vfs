@@ -830,7 +830,12 @@ public class VfsFileSource extends BaseObject implements FileSource {
 		if( factory.hasCapability(Capability.RANDOM_ACCESS_READ) ) {
 			RandomAccessContent rac = f.getContent().getRandomAccessContent(RandomAccessMode.READ);
 			try {
-				rac.seek(Math.min(startingPosition, rac.length()));
+				if( startingPosition >= rac.length() ) {
+					// nothing left: over HTTP a range from the end is refused (416), so none is asked for
+					rac.close();
+					return new java.io.ByteArrayInputStream(new byte[0]);
+				}
+				rac.seek(startingPosition);
 				return new ClosingInputStream(rac.getInputStream(), rac);
 			} catch (IOException | RuntimeException e) {
 				rac.close();
@@ -886,7 +891,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 		if( append && !factory.hasCapability(Capability.APPEND_CONTENT) ) {
 			throw new IOException(factory.getTypeId() + " can't append to a file (" + path + ")");
 		}
-		return f.getContent().getOutputStream(append);
+		return factory.outputOf(f, f.getContent().getOutputStream(append));
 	}
 
 	/** Over VFS's random access, where the file system has it. */

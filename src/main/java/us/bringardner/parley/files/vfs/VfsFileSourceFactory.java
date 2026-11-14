@@ -212,6 +212,18 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 	}
 
 	/**
+	 * The stream a file is written through: by default VFS's. vfswebdav checks, once it is closed,
+	 * that the server has stored what was written (docs/DESIGN.md, 17.3).
+	 * @param fo the file
+	 * @param out VFS's stream
+	 * @return the stream to write to
+	 * @throws IOException if it can't be made
+	 */
+	protected java.io.OutputStream output(FileObject fo, java.io.OutputStream out) throws IOException {
+		return out;
+	}
+
+	/**
 	 * Told when a file is refreshed, so a scheme can forget what it kept about it (vfshttp: whether
 	 * it is a folder). Nothing by default.
 	 * @param fo the file
@@ -437,6 +449,11 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 	/** {@link #children(FileObject)} for VfsFileSource */
 	FileObject[] childrenOf(FileObject fo) throws IOException {
 		return children(fo);
+	}
+
+	/** {@link #output(FileObject, java.io.OutputStream)} for VfsFileSource */
+	java.io.OutputStream outputOf(FileObject fo, java.io.OutputStream out) throws IOException {
+		return output(fo, out);
 	}
 
 	/** {@link #refreshed(FileObject)} for VfsFileSource */

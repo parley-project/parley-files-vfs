@@ -44,7 +44,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
- * JSch, commons-net, commons-compress and httpclient5 are optional (README B8, C14, F1, G5): an application that uses only vfsftp has no
+ * JSch, commons-net, commons-compress, httpclient5 and commons-vfs2-jackrabbit2 are optional (README B8, C14, F1, G5, H5): an application that uses only vfsftp has no
  * JSch, and one that uses only vfssftp has no commons-net, yet parley-files' registry creates every
  * factory parley-files-vfs lists. So each factory must load, and say its type id and settings,
  * without the other scheme's library, and the other scheme must work.
@@ -293,6 +293,22 @@ public class VfsOptionalLibrariesTest {
 						+ " (org.apache.hc.client5.http.classic.HttpClient is missing)", e.getMessage());
 			}
 			works(newFactory(w, "vfsftp"), ftp.properties(), "no-httpclient5.txt");
+		}
+	}
+
+	/** An application without commons-vfs2-jackrabbit2: vfswebdav and vfswebdavs load but can't connect, saying which jar to add. */
+	@Test
+	void withoutJackrabbit2() throws Exception {
+		try (Without w = new Without("commons-vfs2-jackrabbit2-")) {
+			w.lacks("org.apache.commons.vfs2.provider.webdav4.Webdav4FileProvider");
+			for (String type : new String[] { "vfswebdav", "vfswebdavs" }) {
+				Properties p = new Properties();
+				p.setProperty("host", "127.0.0.1");
+				IOException e = connectFails(registered(w, type, 5), p);
+				assertEquals(type + " needs commons-vfs2-jackrabbit2 (org.apache.commons:commons-vfs2-jackrabbit2) on the class path"
+						+ " (org.apache.commons.vfs2.provider.webdav4.Webdav4FileProvider is missing)", e.getMessage());
+			}
+			works(newFactory(w, "vfsftp"), ftp.properties(), "no-jackrabbit2.txt");
 		}
 	}
 }

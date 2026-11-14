@@ -35,6 +35,8 @@
 		<commons-compress.version>1.27.1</commons-compress.version>
 		<!-- The versions VFS 2.10.0 is built with, for vfshttp and vfshttps -->
 		<httpclient5.version>5.4.1</httpclient5.version>
+		<!-- The WebDAV test server: Tomcat's WebdavServlet (Tomcat 10.1 runs on Java 11) -->
+		<tomcat.version>10.1.34</tomcat.version>
 	</properties>
 
 	<dependencyManagement>
@@ -120,6 +122,16 @@
 			<optional>true</optional>
 		</dependency>
 
+		<!-- For vfswebdav and vfswebdavs: VFS's WebDAV provider (webdav4, on httpclient 4 and Jackrabbit),
+		     compiled against (their own provider replaces VFS's, to check certificates), optional, so it
+		     isn't passed on; users add it, and it brings httpclient and jackrabbit-webdav -->
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-vfs2-jackrabbit2</artifactId>
+			<version>${commons-vfs2.version}</version>
+			<optional>true</optional>
+		</dependency>
+
 		<!-- The shared FileSource test suite -->
 		<dependency>
 			<groupId>us.bringardner.parley</groupId>
@@ -131,6 +143,14 @@
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
 			<artifactId>junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- The WebDAV server the vfswebdav tests start -->
+		<dependency>
+			<groupId>org.apache.tomcat.embed</groupId>
+			<artifactId>tomcat-embed-core</artifactId>
+			<version>${tomcat.version}</version>
 			<scope>test</scope>
 		</dependency>
 

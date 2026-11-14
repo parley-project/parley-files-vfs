@@ -39,9 +39,9 @@ module doesn't depend on them: add the one for each scheme you use.
 | `vfsgz` (`gz`) | nothing | its one file |
 | `vfsbz2` (`bz2`) | `org.apache.commons:commons-compress` | its one file |
 | `vfshttp`, `vfshttps` (`http`, `https`) | `org.apache.httpcomponents.client5:httpclient5` | no (read only; folders from the server's listing pages) |
-| `vfswebdav4`, `vfswebdav4s` (`webdav4`, `webdav4s`) | `org.apache.commons:commons-vfs2-jackrabbit2` (VFS's WebDAV provider is its own artifact) | yes (random access: read only) |
+| `vfswebdav`, `vfswebdavs` (`webdav4`, `webdav4s`) | `org.apache.commons:commons-vfs2-jackrabbit2` (VFS's WebDAV provider is its own artifact; it brings httpclient 4 and jackrabbit-webdav) | yes, no append (random access: read only) |
 
-Each type id is `vfs` + the VFS scheme, and is also the scheme of its URLs: `vfszip:file:///tmp/a.zip!/dir` is VFS's
+Each type id is `vfs` + the VFS scheme (for WebDAV, `vfswebdav` on VFS's current `webdav4`), and is also the scheme of its URLs: `vfszip:file:///tmp/a.zip!/dir` is VFS's
 `zip:file:///tmp/a.zip!/dir`, and `FileSourceFactory.getFileSource("vfszip:...")` opens it. The prefix keeps them
 apart from Parley's own `sftp`, `ftp` and `ftps` and from the URL schemes the JDK owns (`http`, `https`, `jar`, `file`).
 
@@ -187,6 +187,20 @@ the server won't show lists nothing, but its files can still be read by name. Re
 ranges where it has them. HTTPS certificates are checked as Parley checks them (the chain by the application's or the
 JVM's trust managers, and the host), also after a redirect to HTTPS: VFS by itself accepts any certificate.
 
+## Using vfswebdav and vfswebdavs
+
+A WebDAV server, read and write. The settings are vfshttp's (`host`, `port` 80 or 443, `user`, `password`, `timeout`
+30s). Add `org.apache.commons:commons-vfs2-jackrabbit2`.
+
+```java
+FileSource doc = FileSourceFactory.getFileSource("vfswebdavs://tony@dav.example.com/dav/notes.txt");
+```
+
+It can't append, and an upload is kept in memory until its stream is closed (VFS sends it then); each upload is then
+checked to be on the server at the size written. Certificates are checked as for vfshttps. Folders and files are told
+apart, and folders listed, with this module's own PROPFIND: VFS's fails on servers that indent their answers (Tomcat).
+Parley's own WebDAV FileSource is planned (To-Do 17.57).
+
 ## Workarounds and skipped tests
 
 Everything parley-files-vfs does differently from VFS left to itself, and every test that doesn't run, with where it is
@@ -283,6 +297,18 @@ sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src
 | G5 | httpclient5 needed on the class path | Used from `VfsHttpClient` only, loaded after connect checks for it | `VfsOptionalLibrariesTest.withoutHttpClient5` |
 | G6 | A refused login: "Could not determine the type of file" | "... refused the login (401 Unauthorized)" | `aLogin` |
 
+### H. vfswebdav and vfswebdavs (`VfsWebdavFileSourceFactory`, `VfsWebdavsFileSourceFactory`, `VfsWebdavClient`)
+
+| # | VFS left to itself | What vfswebdav and vfswebdavs do | Tested by |
+|---|---|---|---|
+| H1 | Every HTTPS certificate trusted [22] | Their own provider: the chain by `VfsTrustManager`, the host by httpclient's verifier | `VfsWebdavsTest`: `aCertificateTheJvmDoesntTrustIsRefused`, `aTrustedCertificateForAnotherHostIsRefused` |
+| H2 | A server that indents its PROPFIND answer (Tomcat): no file's type can be told, nothing listed [25] | Their own PROPFIND for the type and the listing, reading a resourcetype however it is laid out | `VfsWebdavTest`: `foldersAndFilesOnAServerThatIndents`, `vfsAloneCantReadAServerThatIndents`, `resourceTypes`; the shared suites on Tomcat |
+| H3 | Members the server hasn't got are listed (no 200 propstat) [25] | Only the folder's own members with a 200 propstat | `membersTheServerHasntGotAreLeftOut` |
+| H4 | An upload the server stores short or drops goes unnoticed | The close checks the file's size on the server | `anUploadTheServerCutsShortFails` |
+| H5 | commons-vfs2-jackrabbit2 needed on the class path | Used from `VfsWebdavClient` only, loaded after connect checks for it | `VfsOptionalLibrariesTest.withoutJackrabbit2` |
+| H6 | No append | Refused, saying so (decided) | `VfsWebdavTrapsTest.appendIsRefused` |
+| H7 | Reading from the end asks for a range there: 416, and VFS throws (every scheme with ranges) | An empty stream, without asking | `AbstractVfsRandomAccessTest.streamFromAPosition` (vfswebdav) |
+
 ### D. Tests that don't run, and why
 
 With the test server each class starts: as an ordinary user 185 tests, 29 skipped, none failing (with or without an
@@ -302,6 +328,9 @@ ssh-agent: D10); as root 179.
 | D11 | `VfsRamNioProviderTests`: `testFileAttributes`, `testCreateDir` | They set permission bits, which VFS's ram hasn't got (E3) | 2 |
 | D12 | `VfsRamNioProviderTests.fileChannelForceSendsWhatIsHeld` | VFS's ram stores a file when its stream closes | 1 |
 | D13 | `AbstractLockTests`' cross-process cases (`VfsFileLockTest`, `VfsTmpLockTest`, `VfsRamLockTest`) | As D1 | 11 each |
+| D14 | vfswebdav: `TestVfsWebdav.testAppend`, `VfsWebdavTrapsTest.appendAddsToTheEnd`, and `VfsWebdavLockTest`'s `fileChannelLocksTheFile`, `fileChannelRules`, `closeRacingLockAndReleaseLeavesNothingHeld` (they open with APPEND) | vfswebdav refuses append (H6) | 5 |
+| D15 | `VfsWebdavNioProviderTests`: `testFileAttributes`, `testCreateDir`, `fileChannelForceSendsWhatIsHeld` | WebDAV has no permission bits; an upload is sent when its stream closes | 3 |
+| D16 | `AbstractLockTests`' cross-process cases (`VfsWebdavLockTest`) | As D1 | 11 |
 | D10 | `VfsSftpLoginTest`: `theAgentLogsIn`, or `withNoAgentRunningAgentLoginSaysSo` | One of the two, by whether an ssh-agent with a key is running (SSH_AUTH_SOCK); the second also on Windows | 1 |
 
 ## What VFS does that matters here
@@ -373,3 +402,7 @@ Found by checking Commons VFS 2.10.0's code and its capabilities at run time (20
 24. **VFS's http can't log in through an authenticator, nor with a user in the URI.** It hands httpclient5 the
     authenticator's password array and then clears it, so the password sent is empty; and httpclient5 refuses a request
     URI with a user in it, which VFS makes from the root URI.
+25. **VFS's WebDAV can't read an indented PROPFIND answer.** It casts `<D:resourcetype>`'s value to one XML node; a
+    server that indents (Tomcat's WebdavServlet) puts whitespace around `<D:collection/>`, Jackrabbit then gives a list
+    of nodes, and VFS fails with a ClassCastException: it can't tell what "/" is, nor list anything. Its listing also
+    keeps members the server answered without a 200 propstat.

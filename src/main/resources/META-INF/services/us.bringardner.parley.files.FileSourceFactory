@@ -14,3 +14,5 @@ us.bringardner.parley.files.vfs.VfsGzFileSourceFactory
 us.bringardner.parley.files.vfs.VfsBz2FileSourceFactory
 us.bringardner.parley.files.vfs.VfsHttpFileSourceFactory
 us.bringardner.parley.files.vfs.VfsHttpsFileSourceFactory
+us.bringardner.parley.files.vfs.VfsWebdavFileSourceFactory
+us.bringardner.parley.files.vfs.VfsWebdavsFileSourceFactory
