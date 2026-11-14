@@ -28,6 +28,8 @@
 		     in place of com.jcraft:jsch (same packages). Tests only: users add it for sftp. -->
 		<jsch.version>2.28.7</jsch.version>
 		<sshd.version>2.19.0</sshd.version>
+		<!-- The version VFS 2.10.0 is built with -->
+		<commons-net.version>3.11.1</commons-net.version>
 	</properties>
 
 	<dependencyManagement>
@@ -86,6 +88,15 @@
 			<version>${commons-vfs2.version}</version>
 		</dependency>
 
+		<!-- For vfsftp and vfsftps: compiled against (the permission bits read from its FTPFile),
+		     optional, so it isn't passed on; users of those schemes add it, as for every scheme -->
+		<dependency>
+			<groupId>commons-net</groupId>
+			<artifactId>commons-net</artifactId>
+			<version>${commons-net.version}</version>
+			<optional>true</optional>
+		</dependency>
+
 		<!-- The shared FileSource test suite -->
 		<dependency>
 			<groupId>us.bringardner.parley</groupId>
@@ -111,6 +122,14 @@
 			<groupId>org.apache.sshd</groupId>
 			<artifactId>sshd-sftp</artifactId>
 			<version>${sshd.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<!-- The FTP server the vfsftp and vfsftps tests start: Parley's own, as parley-files-ftp's
+		     tests use, so To-Do 17.2 compares the two against the same server -->
+		<dependency>
+			<groupId>us.bringardner.parley</groupId>
+			<artifactId>parley-ftp</artifactId>
+			<version>${project.version}</version>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

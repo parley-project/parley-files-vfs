@@ -320,7 +320,7 @@ public class VfsFileSource extends BaseObject implements FileSource {
 		if( !f.exists() || !factory.hasCapability(Capability.GET_LAST_MODIFIED) ) {
 			return 0L;
 		}
-		return f.getContent().getLastModifiedTime();
+		return factory.lastModifiedOf(f);
 	}
 
 	/** Not known through VFS: 0. */

@@ -3,7 +3,8 @@
 As of 2026-11-13, against Apache Commons VFS 2.10.0 (the current release, Java 8+) and parley-files 2.0.0-SNAPSHOT
 (release-2.0.0). Sections 1 and 2 are the decisions already in the Parley 2.0.0 To-Do doc (17.1, 17.2) and what VFS
 itself does; sections 3 to 7 are the design; section 8 records the decisions made on it (2026-11-13) and what is still
-open; section 9 records what was built (the shared base and `vfssftp`, 2026-11-13) and where it differs from the design.
+open; section 9 records what was built (the shared base and `vfssftp`, 2026-11-13) and where it differs from the design;
+section 10 records `vfsftp` and `vfsftps` (2026-11-13), the next schemes, which To-Do 17.2 needs.
 
 ## 1. Decisions already made (To-Do 17.1 and 17.2, 2026-11-07)
 
@@ -79,7 +80,9 @@ All in `us.bringardner.parley.files.vfs`.
 | `VfsAuthenticator` | VFS `UserAuthenticator` | Hands VFS the user and password when it connects, resolving a keychain reference then (section 4.3) |
 | `VfsLog` | commons-logging `Log` | Sends VFS's own logging through the factory (BaseObject, then `System.Logger`), as parley-files-ftp's `FtpClientWrapper` does |
 | `VfsSftpFileSourceFactory` | `VfsFileSourceFactory` | Type id `vfssftp`: the first scheme |
-| later: `VfsFtpFileSourceFactory`, `VfsFtpsFileSourceFactory`, `VfsZipFileSourceFactory`, `VfsTarFileSourceFactory`, `VfsHttpFileSourceFactory`, `VfsWebdavFileSourceFactory` ... | `VfsFileSourceFactory` | One small class per scheme |
+| `VfsFtpFileSourceFactory`, `VfsFtpsFileSourceFactory` | `VfsFileSourceFactory`, `VfsFtpFileSourceFactory` | Type ids `vfsftp` and `vfsftps` (section 10) |
+| `VfsTrustManager` | `X509ExtendedTrustManager` | The server certificate check for VFS's ftps, as Parley's FTP client makes it (section 10) |
+| later: `VfsZipFileSourceFactory`, `VfsTarFileSourceFactory`, `VfsHttpFileSourceFactory`, `VfsWebdavFileSourceFactory` ... | `VfsFileSourceFactory` | One small class per scheme |
 
 What a scheme's subclass supplies (everything else is shared):
 
@@ -373,3 +376,93 @@ Branch `vfs-project`. Built as sections 3 to 7 describe, with these differences,
    15 skipped, none failing.
 8. **The permission hook** (5.3) works on VFS 2.10.0: `VfsSftpPermissionBitsTest` sets bits with chmod on the
    server's directory and reads them back.
+
+## 10. Built (2026-11-13): vfsftp and vfsftps
+
+Branch `vfs-project`, the next schemes after `vfssftp` (decision 1.8), which To-Do 17.2 compares with parley-files-ftp's
+`ftp` and `ftps`. Each is a small subclass, as section 3 has it: `VfsFtpFileSourceFactory` (`vfsftp`) and
+`VfsFtpsFileSourceFactory` (`vfsftps`, extending it), with `vfsftp:` and `vfsftps:` URL handlers. Decided while
+building, each following a rule already made (parley-files-ftp's settings, as `vfssftp` took parley-files-sftp's;
+the two types as parley-files-ftp has them; 17.2's "same server"):
+
+### 10.1 Settings and types
+
+1. **parley-files-ftp's settings, names and defaults**, so a saved ftp connection works as a vfsftp one: `host`,
+   `port` (21; 990 for vfsftps), `user`, `password`, `secure` (vfsftp only, default false) and `timeout` (4s: VFS's
+   connect, reply and data timeouts).
+2. **The two types as parley-files-ftp has them**: `vfsftp` with `secure` true is explicit TLS (AUTH TLS before
+   logging in), `vfsftps` is implicit TLS from the first byte. VFS's own ftps scheme does both (its default is
+   explicit), so `vfsftp` with TLS opens VFS's `ftps` scheme in explicit mode, and `vfsftps` the same scheme in implicit
+   mode. `vfsScheme()` is `ftps` whenever TLS is on.
+3. **`getURL()` is the type's own** (`vfsftp://ftp@host:21/`, and `?secure=true` for explicit TLS), not `vfs` + VFS's
+   root URI, which for explicit TLS would be `vfsftps:`, an implicit TLS URL.
+4. **Not offered** from parley-files-ftp's settings: `account` (VFS logs in with user and password only; it can't send
+   ACCT), `storeAtOffset` (VFS's ftp can't write at a position) and `bufferSize` (a programmer's setting there). A
+   saved connection that has them still opens; they are ignored.
+5. No user logs in as anonymous, as VFS does.
+6. `commons-net` is an optional dependency of the module (compiled against for the listing entry's bits, 10.3, and
+   not passed on); `FTPFile` is used only from a nested class, so the registry can load the factories without it.
+
+### 10.2 VFS's defaults changed
+
+VFS's ftp, left to its defaults, behaves unlike parley-files-ftp and, with TLS, unsafely. Each is set in `configure`:
+
+| VFS default | Set to | Why |
+|---|---|---|
+| Active mode (no PASV) | Passive | As parley-files-ftp, and what works through firewalls and NAT |
+| `userDirIsRoot` true: `/` is the login directory | false | Paths are the server's, as in parley-files-ftp (as for sftp, 2.2.4) |
+| The listing's time (to the minute, often only the day) | MDTM for files (to the second) | parley-files-ftp's times; see 10.3 for directories |
+| ISO-8859-1 file names | UTF-8, and OPTS UTF8 where the server lists it | Names as Parley's client and server send them |
+| A stream closed early is a failed close | 426 and 550 after an early close are fine (VFS's own "sane" list) | Otherwise `head()`, or reading part of a file, throws |
+| TLS: no PROT | PBSZ 0, PROT P | VFS sent no PROT, so files and listings went **in the clear** after a TLS login; against Parley's implicit-TLS server a listing hung |
+| TLS: commons-net's trust manager, which only checks that the certificate is in date | `VfsTrustManager` | VFS **accepted any self-signed certificate, for any host** (checked: it logged in to a server the JVM doesn't trust, at a host the certificate doesn't name) |
+
+`VfsTrustManager` checks the chain as Parley's FTP client does: with `SecureBaseObject.getDefaultTrustManagers()`
+when an application has set them (parley-files-viewer's certificate dialog does), else the JVM's trust store; and the
+certificate must be for the factory's host (RFC 6125: an address literal against its IP addresses, a name against its
+DNS names with `*` standing for one whole first label, or its common name when it has no DNS names). The host is the
+one the factory was given, not the one each socket names: an FTP data connection goes to the address PASV gives, and
+must present the same server's certificate. VFS has no option for commons-net's own host name check, so this is in
+the trust manager. No setting turns the check off (parley-files-ftp has none either).
+
+### 10.3 Where VFS's ftp needed help
+
+1. **Permission bits** (5.3, Q2): VFS's ftp provider keeps the server's listing entry (commons-net's `FTPFile`) in a
+   private field, `ftpFile`; `posixMode` reads the nine bits from it by reflection. A failure gives false bits, logged
+   once. VFS's ftp can't set any bit (it has no SITE CHMOD), so every setter returns false.
+2. **A directory's time**: with MDTM on, VFS asks MDTM for a directory too, which servers answer only for files (RFC
+   3659), and then fails (commons-net gives no time and VFS doesn't check: a NullPointerException inside a
+   `FileSystemException`). A new base hook, `lastModified(FileObject)`, lets vfsftp take a directory's time from its
+   listing entry (the same field) and a file's from VFS.
+3. Times can't be set (VFS's ftp has no `SET_LAST_MODIFIED`): `setLastModifiedTime` returns false.
+
+### 10.4 Tests
+
+Against Parley's own FtpServer (parley-ftp, test scope), which each test class starts on a free port with its own
+root, anonymous FTP with read and write: the server parley-files-ftp's tests use, so 17.2 compares like with like.
+
+1. The tests every scheme shares are now abstract bases each scheme's test server plugs into (`VfsTestServer`):
+   `AbstractVfsTrapsTest`, `AbstractVfsRandomAccessTest`, `AbstractVfsLockTest`, `AbstractVfsPermissionBitsTest`. The
+   vfssftp tests extend them too, unchanged in what they test.
+2. vfsftp: the shared suites (`TestVfsFtp`, `VfsFtpNioProviderTests`, `VfsFtpLockTest`), the traps, random access
+   reading, the permission bits, the factory (URLs, settings, the VFS options of 10.2, copies, reconnects, a
+   directory's time).
+3. TLS (`VfsFtpTlsTest`): explicit and implicit TLS listing, reading and writing; a certificate the JVM doesn't trust
+   refused; a trusted certificate for another host refused (for both types); PROT P and the mode in the options.
+   `VfsTrustManagerTest`: the host name rules.
+4. Skipped, each saying why: setting permission bits in the NIO suite (VFS's ftp can't), the forced write visible
+   before close (an FTP upload is stored when it ends, as parley-files-ftp's NIO tests say too), and the cross-process
+   lock cases. As root, `VfsFtpPermissionBitsTest` is skipped: Parley's FtpServer lists the bits its FileProxy reports,
+   and for root every file is writable by its owner (parley-files-ftp's tests need an ordinary user too).
+5. Results: as an ordinary user 166 tests, 30 skipped, 1 failing, `TestVfsSftp.testPermissions` (10.5); as root
+   160, 30 skipped, none failing.
+
+### 10.5 Found: vfssftp's permission setters (open)
+
+Running the whole suite as an ordinary user (it had been run only as root) shows `TestVfsSftp.testPermissions`
+failing, on the branch as it was before this work too. VFS's sftp changes a permission by sending the file's whole
+stat back (size, owner and group, times, mode), not a chmod. The MINA test server refuses the times part on a file its
+owner can't read (Java sets times through a read handle); OpenSSH would allow it. Re-sending the size and times also
+means a file that grows between VFS's stat and its setstat could be cut back. Open: whether vfssftp should send only the
+mode (a plain chmod, reaching VFS internals as the bits hook does), or keep VFS's way and skip that case in the test.
+

@@ -41,14 +41,13 @@ import org.apache.sshd.server.SshServer;
 import org.apache.sshd.sftp.server.SftpSubsystemFactory;
 
 import us.bringardner.parley.files.test.FileSourceTestSupport;
-import us.bringardner.parley.files.test.TestServerController;
 
 /**
  * An SFTP server for one test class: Apache MINA SSHD on the loopback address, on a free port,
  * serving a new directory of its own as "/" to one user. Start it, use it, stop it (the shared
  * suites stop the one in {@code FileSourceTestSupport.server} after the class).
  */
-final class VfsSftpTestServer implements TestServerController {
+final class VfsSftpTestServer implements VfsTestServer {
 
 	static final String USER = "unittest1";
 	static final String PASSWORD = "0000";
@@ -115,8 +114,8 @@ final class VfsSftpTestServer implements TestServerController {
 		return sshd.getPort();
 	}
 
-	/** The local directory the server serves as "/". */
-	Path home() {
+	@Override
+	public Path home() {
 		return home;
 	}
 
@@ -138,7 +137,8 @@ final class VfsSftpTestServer implements TestServerController {
 	}
 
 	/** A factory connected as USER; the caller disconnects it. */
-	VfsSftpFileSourceFactory connect() throws IOException {
+	@Override
+	public VfsSftpFileSourceFactory connect() throws IOException {
 		VfsSftpFileSourceFactory f = new VfsSftpFileSourceFactory();
 		f.setConnectionProperties(properties());
 		assertTrue(f.connect(), "can't connect to " + HOST + ":" + port());

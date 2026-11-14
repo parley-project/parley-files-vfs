@@ -2,6 +2,20 @@
 
 ## parley-files-vfs 2.0.0 (unreleased)
 
+### Added (2026-11-13: vfsftp and vfsftps)
+
+- **`VfsFtpFileSourceFactory`** (type id `vfsftp`) and **`VfsFtpsFileSourceFactory`** (`vfsftps`): parley-files-ftp's
+  settings and its two types (vfsftp with `secure` is explicit TLS, vfsftps implicit TLS); VFS's defaults changed to
+  passive mode, the server's root, MDTM times for files, UTF-8 names and early-closed transfers accepted; with TLS,
+  PROT P and the server's certificate checked (`VfsTrustManager`: the chain by the application's or the JVM's trust
+  managers, and the host name), which VFS by itself doesn't do. Permission bits and a directory's time read from VFS's
+  listing entry by reflection. commons-net is an optional dependency.
+- **`vfsftp:` and `vfsftps:` URLs**.
+- **`VfsFileSourceFactory.lastModified(FileObject)`**: a hook for a scheme that needs help with times.
+- **Tests** against Parley's FtpServer: the shared suites, traps, random access, permission bits, factory, TLS and the
+  host name rules. The tests every scheme shares are now abstract bases (`AbstractVfsTrapsTest` and the like) that
+  vfssftp's tests extend too.
+
 ### Added (2026-11-13: the shared base and vfssftp)
 
 - **`VfsFileSourceFactory`**, the shared base: a VFS manager of its own per factory (never `VFS.getManager()`),

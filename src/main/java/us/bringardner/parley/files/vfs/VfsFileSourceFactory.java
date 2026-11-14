@@ -114,6 +114,17 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 	}
 
 	/**
+	 * The file's modification time (ms), for a scheme whose provider needs help with it (VFS's ftp
+	 * can't give a directory's when it uses MDTM). The default is VFS's own.
+	 * @param fo the file, which exists
+	 * @return the time
+	 * @throws IOException if it can't be read
+	 */
+	protected long lastModified(FileObject fo) throws IOException {
+		return fo.getContent().getLastModifiedTime();
+	}
+
+	/**
 	 * Whether the file system applies operations in one order (one server, one archive), for
 	 * {@link us.bringardner.parley.files.FileSourceCapabilities#orderedOperations()}. The default is
 	 * true.
@@ -198,6 +209,11 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 	/** {@link #posixMode(FileObject)} for VfsFileSource, which is in this package */
 	Integer modeOf(FileObject fo) {
 		return posixMode(fo);
+	}
+
+	/** {@link #lastModified(FileObject)} for VfsFileSource */
+	long lastModifiedOf(FileObject fo) throws IOException {
+		return lastModified(fo);
 	}
 
 	/** {@link #orderedOperations()} for VfsFileSource */

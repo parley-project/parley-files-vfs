@@ -1,1 +1,3 @@
 us.bringardner.parley.files.vfs.VfsSftpFileSourceFactory
+us.bringardner.parley.files.vfs.VfsFtpFileSourceFactory
+us.bringardner.parley.files.vfs.VfsFtpsFileSourceFactory

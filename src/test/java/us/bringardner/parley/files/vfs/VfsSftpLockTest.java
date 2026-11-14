@@ -19,55 +19,15 @@
  */
 package us.bringardner.parley.files.vfs;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.io.IOException;
-import java.util.concurrent.atomic.AtomicInteger;
 
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
 
-import us.bringardner.parley.files.FileSource;
-import us.bringardner.parley.files.lock.LockScope;
-import us.bringardner.parley.files.test.AbstractLockTests;
-
-/** The shared lock suite over vfssftp: FileSource's in-process locks (scope PROCESS). */
-public class VfsSftpLockTest extends AbstractLockTests {
-
-	private static final AtomicInteger DIRS = new AtomicInteger();
-	private static VfsSftpTestServer server;
-	private static VfsSftpFileSourceFactory factory;
+/** The shared lock suite over vfssftp (AbstractVfsLockTest). */
+public class VfsSftpLockTest extends AbstractVfsLockTest {
 
 	@BeforeAll
 	static void start() throws IOException {
-		server = VfsSftpTestServer.started();
-		factory = server.connect();
-	}
-
-	@AfterAll
-	static void stop() throws IOException {
-		try {
-			if( factory != null ) {
-				factory.disConnect();
-			}
-		} finally {
-			if( server != null ) {
-				server.stop();
-			}
-		}
-	}
-
-	@Override
-	protected FileSource newLockDirectory() throws Exception {
-		FileSource d = factory.createFileSource("/locks" + System.nanoTime() + "-" + DIRS.incrementAndGet());
-		assertTrue(d.mkdir(), "can't create " + d);
-		return d;
-	}
-
-	@Test
-	public void vfsLocksStayInThisJvm() {
-		assertEquals(LockScope.PROCESS, dir.getLockScope());
+		startOn(VfsSftpTestServer.started());
 	}
 }

@@ -28,68 +28,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.condition.DisabledOnOs;
-import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import us.bringardner.parley.files.FileSource;
 
-/**
- * The sftp permission hook (it reads VFS internals by reflection): the nine bits must be the ones
- * the server's file has, set here with chmod on the directory the test server serves. A VFS
- * upgrade that moves what the hook reads fails this.
- */
-@DisabledOnOs(value = OS.WINDOWS, disabledReason = "POSIX permission bits")
-public class VfsSftpPermissionBitsTest {
-
-	private static VfsSftpTestServer server;
-	private static VfsSftpFileSourceFactory factory;
+/** The sftp permission hook (AbstractVfsPermissionBitsTest), and setting bits, which sftp can. */
+public class VfsSftpPermissionBitsTest extends AbstractVfsPermissionBitsTest {
 
 	@BeforeAll
 	static void start() throws IOException {
-		server = VfsSftpTestServer.started();
-		factory = server.connect();
-	}
-
-	@AfterAll
-	static void stop() throws IOException {
-		try {
-			if( factory != null ) {
-				factory.disConnect();
-			}
-		} finally {
-			if( server != null ) {
-				server.stop();
-			}
-		}
-	}
-
-	@ParameterizedTest
-	@ValueSource(strings = { "rwxrwxrwx", "r--------", "rw-r-----", "rwx---r-x", "---rw--wx", "r-xr-xr--" })
-	void bitsAreTheServers(String mode) throws IOException {
-		FileSource f = factory.createFileSource("/bits-" + mode + ".txt");
-		try (OutputStream out = f.getOutputStream()) {
-			out.write('x');
-		}
-		Path local = server.home().resolve(f.getName());
-		Files.setPosixFilePermissions(local, PosixFilePermissions.fromString(mode));
-		try {
-			f.refresh();
-			String seen = "" + c(f.canOwnerRead(), 'r') + c(f.canOwnerWrite(), 'w') + c(f.canOwnerExecute(), 'x')
-					+ c(f.canGroupRead(), 'r') + c(f.canGroupWrite(), 'w') + c(f.canGroupExecute(), 'x')
-					+ c(f.canOtherRead(), 'r') + c(f.canOtherWrite(), 'w') + c(f.canOtherExecute(), 'x');
-			assertEquals(mode, seen);
-		} finally {
-			Files.setPosixFilePermissions(local, PosixFilePermissions.fromString("rw-------"));
-			assertTrue(f.delete());
-		}
-	}
-
-	private static char c(boolean b, char ch) {
-		return b ? ch : '-';
+		startOn(VfsSftpTestServer.started());
 	}
 
 	/** setReadable(b, false) is everyone's; setReadable(b) and setOwnerReadable(b) the owner's. */
