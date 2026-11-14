@@ -52,21 +52,4 @@ public class VfsSftpNioProviderTests extends AbstractNioProviderTests {
 	public void transferToStopsWhenTheTargetTakesNothing() throws Exception {
 		Assumptions.abort("JSch drops a stream whose reading thread has ended (README, What VFS does, item 10)");
 	}
-
-	/**
-	 * Sets group and other permission bits alone (rwxr-x---), which VFS can't (docs/DESIGN.md 5.3,
-	 * Q2: false for anything VFS doesn't give). VfsSftpPermissionBitsTest checks what VFS can do.
-	 */
-	@Override
-	@Test
-	public void testFileAttributes() throws Exception {
-		Assumptions.abort("VFS can't set group or other permission bits alone (DESIGN 5.3)");
-	}
-
-	/** Creates a directory with rwxr-x--- (group and other bits alone), which VFS can't set. */
-	@Override
-	@Test
-	public void testCreateDir() throws Exception {
-		Assumptions.abort("VFS can't set group or other permission bits alone (DESIGN 5.3)");
-	}
 }

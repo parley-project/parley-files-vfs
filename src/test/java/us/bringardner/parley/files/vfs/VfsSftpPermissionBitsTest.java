@@ -111,4 +111,27 @@ public class VfsSftpPermissionBitsTest extends AbstractVfsPermissionBitsTest {
 			assertTrue(f.delete());
 		}
 	}
+
+	/** The group's and other users' bits alone, each leaving the rest as it was. */
+	@Test
+	void groupAndOtherBitsAlone() throws IOException {
+		FileSource f = file("group-other.txt", "rw-------");
+		try {
+			assertTrue(f.setGroupReadable(true));
+			assertEquals("rw-r-----", mode(f));
+			assertTrue(f.setGroupWritable(true));
+			assertTrue(f.setOtherExecutable(true));
+			assertEquals("rw-rw---x", mode(f));
+			assertTrue(f.canGroupWrite() && f.canOtherExecute() && !f.canOtherRead());
+			assertTrue(f.setGroupWritable(false));
+			assertTrue(f.setOtherReadable(true));
+			assertTrue(f.setOtherWritable(true));
+			assertTrue(f.setGroupExecutable(true));
+			assertEquals("rw-r-xrwx", mode(f));
+			assertTrue(f.setOtherWritable(false));
+			assertEquals("rw-r-xr-x", mode(f));
+		} finally {
+			assertTrue(f.delete());
+		}
+	}
 }

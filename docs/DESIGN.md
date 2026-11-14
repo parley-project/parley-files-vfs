@@ -216,9 +216,9 @@ no hook.
 |---|---|
 | `canRead()`, `canWrite()`, `canExecute()` | `fo.isReadable()`, `fo.isWriteable()`, `fo.isExecutable()`: VFS's own answer for the connected user (overridden, since FileSource's defaults work them out from the bits) |
 | `canOwner*()`, `canGroup*()`, `canOther*()` | The bit from `posixMode()`; false when the scheme has no hook or the hook can't read it |
-| `setReadable(b, ownerOnly)` and the like | `fo.setReadable(b, ownerOnly)` (ownerOnly false sets owner, group and other) |
-| `setOwnerReadable(b)` and the like | `fo.setReadable(b, true)` (owner only) |
-| `setGroup*()`, `setOther*()` | false: VFS can't set group or other alone |
+| `setReadable(b, ownerOnly)` and the like | The scheme's `changeMode` hook where it has one (vfssftp: a chmod, 10.5), else `fo.setReadable(b, ownerOnly)` (ownerOnly false sets owner, group and other) |
+| `setOwnerReadable(b)` and the like | `setReadable(b, true)` (owner only) |
+| `setGroup*()`, `setOther*()` | The scheme's `changeMode` hook (vfssftp, since 2026-11-13: 10.6); false where there is none, since VFS can't set group or other alone |
 | `setReadOnly()` | `fo.setWritable(false, false)` |
 
 The hooks reach VFS internals, so:
@@ -331,7 +331,8 @@ A `filesource:` URL (`filesource:/dir?sourcetype=vfszip&archive=...`) works as f
 
 1. **Q1 caching: decided, VFS's default.** `ON_RESOLVE` with the soft cache; `FileSource.refresh()` calls
    `fo.refresh()`, and a change made through the factory refreshes what it touched. To be measured in 17.2.
-2. **Q2 permissions: decided, as complete as VFS allows, false for anything it doesn't give** (5.3).
+2. **Q2 permissions: decided, as complete as VFS allows, false for anything it doesn't give** (5.3). For vfssftp,
+   "as complete as possible" now includes the group's and other users' bits alone, set by its own chmod (10.6).
 3. **Q3 URL handlers: decided for now, `vfs` + scheme** (`vfszip`, `vfstar` ...; 6.1).
 4. **Q4 archives on a FileSource: later, recorded.** A small VFS provider for a `parley:` scheme (a VFS `FileObject`
    over a FileSource) would let VFS open `zip:parley:...`, so an archive on any Parley file system (sftp, a database
@@ -475,9 +476,21 @@ is; the mode is masked with 07777, so the special bits stay; then VFS's cached s
 fails (another VFS version), VFS's own setters are used, logged once. JSch becomes an optional compile dependency (used
 from a nested class only, so the registry can load the factory without it), as commons-net is for ftp.
 
-What VFS can set is otherwise unchanged (Q2): the owner's bits, or everyone's at once; the group's and other users'
-setters still return false, though the hook could now set them (not done: to decide).
+With the hook, vfssftp can also set the group's and other users' bits alone (10.6).
 
 Tests (`VfsSftpPermissionBitsTest`): a file its owner can't read has a bit changed; a mode changed on the server
 behind the FileSource's back is kept. Keeping the special bits can't be tested against MINA: Java's file API can't read
 or set setuid, setgid or sticky, so MINA drops them on any chmod.
+
+### 10.6 vfssftp sets the group's and other users' bits alone (decided 2026-11-13)
+
+Decided once 10.5's chmod made it possible: `setGroupReadable` and the other five group and other setters go through
+the scheme's `changeMode` hook, so vfssftp sets each bit alone, leaving the rest as they are. Where a scheme has no
+hook (vfsftp, and VFS's other schemes) they return false as before, since VFS's own API can't set them alone. This
+widens Q2's "as complete as VFS allows" for vfssftp.
+
+Tests: `VfsSftpPermissionBitsTest.groupAndOtherBitsAlone`; and the vfssftp overrides that existed only because these
+bits couldn't be set are gone: `TestVfsSftp` runs the shared `testPermissions` as written, and
+`VfsSftpNioProviderTests` runs `testFileAttributes` and `testCreateDir` (rwxr-x---) again. Results: as an ordinary
+user 169 tests, 28 skipped, none failing; as root 163, 28 skipped, none failing.
+

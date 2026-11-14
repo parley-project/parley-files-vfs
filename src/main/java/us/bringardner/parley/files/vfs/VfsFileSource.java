@@ -524,6 +524,16 @@ public class VfsFileSource extends BaseObject implements FileSource {
 		return ret != null ? ret : f.setExecutable(b, ownerOnly);
 	}
 
+	/** BITS on or off through the scheme's own way; false if it has none (VFS can't set them alone). */
+	private boolean changeModeAlone(boolean on, int bits) throws IOException {
+		FileObject f = fo();
+		if( !f.exists() ) {
+			return false;
+		}
+		Boolean ret = changeMode(f, on, bits);
+		return ret != null && ret;
+	}
+
 	/** The scheme's own way of turning BITS on or off, or null for VFS's setters. */
 	private Boolean changeMode(FileObject f, boolean on, int bits) throws IOException {
 		return factory.changeModeOf(f, on ? bits : 0, on ? 0 : bits);
@@ -560,40 +570,40 @@ public class VfsFileSource extends BaseObject implements FileSource {
 		return setExecutable(b, true);
 	}
 
-	/** VFS can't set the group's permission alone: false. */
+	/** The group's permission alone, where the scheme can (vfssftp); false where VFS can't set it alone. */
 	@Override
 	public boolean setGroupReadable(boolean b) throws IOException {
-		return false;
+		return changeModeAlone(b, 040);
 	}
 
-	/** VFS can't set the group's permission alone: false. */
+	/** The group's permission alone, where the scheme can (vfssftp); false where VFS can't set it alone. */
 	@Override
 	public boolean setGroupWritable(boolean b) throws IOException {
-		return false;
+		return changeModeAlone(b, 020);
 	}
 
-	/** VFS can't set the group's permission alone: false. */
+	/** The group's permission alone, where the scheme can (vfssftp); false where VFS can't set it alone. */
 	@Override
 	public boolean setGroupExecutable(boolean b) throws IOException {
-		return false;
+		return changeModeAlone(b, 010);
 	}
 
-	/** VFS can't set other users' permission alone: false. */
+	/** Other users' permission alone, where the scheme can (vfssftp); false where VFS can't set it alone. */
 	@Override
 	public boolean setOtherReadable(boolean b) throws IOException {
-		return false;
+		return changeModeAlone(b, 04);
 	}
 
-	/** VFS can't set other users' permission alone: false. */
+	/** Other users' permission alone, where the scheme can (vfssftp); false where VFS can't set it alone. */
 	@Override
 	public boolean setOtherWritable(boolean b) throws IOException {
-		return false;
+		return changeModeAlone(b, 02);
 	}
 
-	/** VFS can't set other users' permission alone: false. */
+	/** Other users' permission alone, where the scheme can (vfssftp); false where VFS can't set it alone. */
 	@Override
 	public boolean setOtherExecutable(boolean b) throws IOException {
-		return false;
+		return changeModeAlone(b, 01);
 	}
 
 	/** Takes write permission from everyone. */

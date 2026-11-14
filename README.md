@@ -54,9 +54,9 @@ FileSource file = f.createFileSource("/home/tony/a.txt");
 FileSource same = FileSourceFactory.getFileSource("vfssftp://tony@host/home/tony/a.txt");
 ```
 
-What it can't do, from VFS: write at a position in a file (`getRandomAccessStream("rw")` is refused; `"r"` works),
-set the group's or other users' permission bits alone (those setters return false; the owner's, or everyone's at
-once, can be set), make links, or say who owns a file. `createNewFile()` and `mkdir()` are **not atomic**
+Every permission bit can be set, each alone (a chmod with only the mode, as parley-files-sftp sends). What it can't
+do, from VFS: write at a position in a file (`getRandomAccessStream("rw")` is refused; `"r"` works), make links, or say
+who owns a file. `createNewFile()` and `mkdir()` are **not atomic**
 (`getCapabilities()` says so). Logging in through an ssh-agent isn't supported yet.
 
 ## Using vfsftp and vfsftps

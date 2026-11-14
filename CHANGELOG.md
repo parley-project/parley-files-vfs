@@ -2,6 +2,11 @@
 
 ## parley-files-vfs 2.0.0 (unreleased)
 
+### Added (2026-11-13)
+
+- **vfssftp sets the group's and other users' permission bits alone** (`setGroupReadable` and the like), through its
+  chmod; they return false for schemes without one. The vfssftp tests that skipped these now run.
+
 ### Fixed (2026-11-13)
 
 - **vfssftp's permission setters send only the mode**, as parley-files-sftp does: a chmod starting from the server's
