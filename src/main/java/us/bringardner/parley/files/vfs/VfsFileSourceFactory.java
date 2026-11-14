@@ -306,7 +306,8 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 	 * @throws IOException if VFS can't start one
 	 */
 	protected StandardFileSystemManager openManager() throws IOException {
-		StandardFileSystemManager m = new StandardFileSystemManager();
+		// its temporary files in a folder of its own, never VFS's shared vfs_cache (docs/DESIGN.md, 19)
+		StandardFileSystemManager m = new VfsManager();
 		m.setLogger(new VfsLog(this));
 		try {
 			m.init();

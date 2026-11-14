@@ -5,7 +5,9 @@ As of 2026-11-13, against Apache Commons VFS 2.10.0 (the current release, Java 8
 itself does; sections 3 to 7 are the design; section 8 records the decisions made on it (2026-11-13) and what is still
 open; section 9 records what was built (the shared base and `vfssftp`, 2026-11-13) and where it differs from the design;
 section 10 records `vfsftp` and `vfsftps` (2026-11-13), the next schemes, which To-Do 17.2 needs; section 11 what
-was decided after 17.2's comparison. Every workaround and
+was decided after 17.2's comparison; sections 12 and 13 the sftp agent login and the library check (2026-11-14);
+sections 14 to 19 every other VFS scheme (2026-11-14): the local schemes, the archives, HTTP, WebDAV, HDFS, and each
+manager's own temporary folder. Every workaround and
 every skipped test, with the test that covers it, is listed in the README, "Workarounds and skipped tests".
 
 ## 1. Decisions already made (To-Do 17.1 and 17.2, 2026-11-07)
@@ -833,3 +835,15 @@ the like come from the configuration. URL `vfshdfs://namenode:8020/user/tony/a.t
    Without it, `VfsHdfsFactoryTest` checks the registration, settings and URLs, and the missing-library message; with
    the profile, also the configuration file (missing: said; present: given to VFS) and an unreachable name node. Not
    yet run against a real cluster.
+
+## 19. Each manager's temporary files in a folder of its own (2026-11-14)
+
+Found by running the whole suite as an ordinary user after it had run as root: VFS's `DefaultFileReplicator` keeps every
+manager's temporary files in one fixed folder, `java.io.tmpdir/vfs_cache` (the `tmp` scheme's folders, and the copies
+VFS makes of an archive inside an archive or on a server). The first user to make it owns it, and another user's
+vfstmp then fails ("Could not create folder \"tmp:///\"") and so does a nested archive ("Could not replicate"). On a
+shared machine (or a Mac with more than one user) that is a real failure, not a test artefact. Each manager is now a
+`VfsManager` (a `StandardFileSystemManager` whose replicator uses a folder made for it with
+`Files.createTempDirectory("parley-vfs-")`), and closing the manager deletes that folder with whatever is left in it.
+vfstmp's files are under it, and go with the last factory of their name (14.2), as before. Test:
+`VfsLocalFactoryTest.eachManagerHasATemporaryFolderOfItsOwn`, and the suite run as an ordinary user after root.

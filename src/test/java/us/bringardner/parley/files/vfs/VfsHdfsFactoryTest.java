@@ -138,6 +138,19 @@ public class VfsHdfsFactoryTest {
 			f.setPort(s.getLocalPort());
 		}
 		java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("parley-vfs-hdfs");
+		try {
+			configFiles(f, dir);
+		} finally {
+			try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(dir)) {
+				for (java.nio.file.Path p : (Iterable<java.nio.file.Path>) s::iterator) {
+					java.nio.file.Files.deleteIfExists(p);
+				}
+			}
+			java.nio.file.Files.deleteIfExists(dir);
+		}
+	}
+
+	private static void configFiles(VfsHdfsFileSourceFactory f, java.nio.file.Path dir) throws IOException {
 		f.setConfig(dir.resolve("none.xml").toString());
 		IOException e = assertThrows(IOException.class, f::connect);
 		assertEquals("vfshdfs: the Hadoop configuration file " + dir.resolve("none.xml") + " isn't there", e.getMessage());

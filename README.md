@@ -1,7 +1,10 @@
 # parley-files-vfs
 
-> **In development** (Parley 2.0.0, To-Do 17.1). The shared base and the schemes `vfssftp`, `vfsftp` and `vfsftps`
-> are built and tested; the other schemes come next. [docs/DESIGN.md](docs/DESIGN.md) maps out how it is built.
+> **In development** (Parley 2.0.0, To-Do 17.1). Every scheme of VFS 2.10.0 has a factory, once each, on VFS's
+> current client library: `vfsfile`, `vfstmp`, `vfsram`, `vfsres`, the archives (`vfszip`, `vfsjar`, `vfstar`,
+> `vfstgz`, `vfstbz2`, `vfsgz`, `vfsbz2`), `vfshttp`, `vfshttps`, `vfswebdav`, `vfswebdavs`, `vfshdfs`, `vfssftp`,
+> `vfsftp` and `vfsftps`; all built and tested (vfshdfs only against a cluster you give).
+> [docs/DESIGN.md](docs/DESIGN.md) maps out how it is built.
 
 [parley-files](https://github.com/parley-project/parley-files) `FileSource` implementations for the file systems
 [Apache Commons VFS](https://commons.apache.org/proper/commons-vfs/) reaches, part of **Parley**, a family of Java
@@ -245,6 +248,7 @@ sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src
 | A17 | A scheme whose optional library is missing: sftp is dropped (connect says the URI is "a relative path"), ftp throws NoClassDefFoundError, and the manager made for that connect stays open | connect checks for the library's class first (`libraryClass()`) and throws an IOException naming the jar to add, e.g. "vfssftp needs JSch (com.github.mwiede:jsch) on the class path"; a connect that fails in any way, Errors included, closes its manager | `withoutJSch`, `withoutCommonsNet` (the message, twice, and still disconnected); the manager closed on an Error: not on its own |
 
 | A18 | A thread-safe copy (a new manager) of a ram or tmp factory would see an empty file system | vfsram and vfstmp share one manager per type and `name`, counted, closed by the last factory to disconnect (DESIGN 14.2) | `VfsLocalFactoryTest`: `ramAndTmpAreSharedByName`, `ramAndTmpAreGoneWhenTheLastDisconnects`; `AbstractVfsTrapsTest.eachFactoryHasAVfsManagerOfItsOwn` (the same manager for one name) |
+| A20 | Every manager's temporary files (tmp's folder, copies of nested or remote archives) in one fixed folder, `java.io.tmpdir/vfs_cache`: the first user to make it owns it, and other users' vfstmp and nested archives fail [27] | Each manager has a temporary folder of its own (`VfsManager`), deleted when it closes | `VfsLocalFactoryTest.eachManagerHasATemporaryFolderOfItsOwn`; the whole suite run as an ordinary user after root |
 | A19 | A path resolves from the file system's root (for `file`, the whole disk) | A path resolves under the factory's root, so vfsfile reaches nothing above its `root` | `vfsfilePathsAreFromItsRootAndCantLeaveIt` |
 
 ### B. vfssftp (`VfsSftpFileSourceFactory`)
@@ -333,8 +337,8 @@ sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src
 
 ### D. Tests that don't run, and why
 
-With the test server each class starts: as an ordinary user 185 tests, 29 skipped, none failing (with or without an
-ssh-agent: D10); as root 179.
+With the test server each class starts: as an ordinary user 516 tests, 87 skipped, none failing (with or without an
+ssh-agent: D10); as root 510, 87 skipped (2026-11-14, without an HDFS cluster: D17).
 
 | # | Test | Skipped for | Count |
 |---|---|---|---|
@@ -432,3 +436,7 @@ Found by checking Commons VFS 2.10.0's code and its capabilities at run time (20
 26. **VFS's HDFS provider can't run from its own pom.** VFS's project pom excludes every dependency of hadoop-common
     (`*:*`), so with `commons-vfs2-hdfs` alone Hadoop's configuration fails to load (no Woodstox). Hadoop's client must
     be added beside it.
+27. **VFS keeps every manager's temporary files in one folder**, `java.io.tmpdir/vfs_cache` (its `tmp` scheme's
+    folders, and the copies it makes of an archive inside an archive or on a server). The first user to make it owns
+    it; on a machine with more users, another user's `tmp:` and nested archives then fail ("Could not create folder",
+    "Could not replicate"). Found by running the tests as an ordinary user after root.

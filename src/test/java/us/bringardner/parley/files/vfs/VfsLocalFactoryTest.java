@@ -255,6 +255,26 @@ public class VfsLocalFactoryTest {
 		}
 	}
 
+	/**
+	 * README A20: a manager's temporary files are in a folder of its own, deleted when it closes, never
+	 * in VFS's shared java.io.tmpdir/vfs_cache (which another user may own).
+	 */
+	@Test
+	void eachManagerHasATemporaryFolderOfItsOwn() throws Exception {
+		VfsTmpFileSourceFactory a = connected(new VfsTmpFileSourceFactory(), props(VfsNamedFileSourceFactory.PROP_NAME, "own-temp"));
+		java.lang.reflect.Field mf = VfsFileSourceFactory.class.getDeclaredField("manager");
+		mf.setAccessible(true);
+		Path temp = ((VfsManager) mf.get(a)).tempDir();
+		assertTrue(Files.isDirectory(temp));
+		assertFalse(temp.toString().contains("vfs_cache" + java.io.File.separator + "tmp_"), temp.toString());
+		FileSource f = a.createFileSource("/t.txt");
+		write(f, "t");
+		Path local = LocalBits.path(((VfsFileSource) f).fo(), a);
+		assertTrue(local.startsWith(temp), local + " is under " + temp);
+		a.disConnect();
+		assertFalse(Files.exists(temp), "deleted with its manager");
+	}
+
 	@Test
 	void ramAndTmpUrls() throws IOException {
 		VfsRamFileSourceFactory def = new VfsRamFileSourceFactory();
