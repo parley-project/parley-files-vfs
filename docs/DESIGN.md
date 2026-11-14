@@ -1,9 +1,9 @@
 # parley-files-vfs: how FileSourceFactory and FileSource map onto Commons VFS
 
 As of 2026-11-13, against Apache Commons VFS 2.10.0 (the current release, Java 8+) and parley-files 2.0.0-SNAPSHOT
-(release-2.0.0). Nothing here is implemented yet. Sections 1 and 2 are the decisions already in the Parley 2.0.0 To-Do
-doc (17.1, 17.2) and what VFS itself does; sections 3 to 7 are the design; section 8 records the decisions made on it
-(2026-11-13) and what is still open.
+(release-2.0.0). Sections 1 and 2 are the decisions already in the Parley 2.0.0 To-Do doc (17.1, 17.2) and what VFS
+itself does; sections 3 to 7 are the design; section 8 records the decisions made on it (2026-11-13) and what is still
+open; section 9 records what was built (the shared base and `vfssftp`, 2026-11-13) and where it differs from the design.
 
 ## 1. Decisions already made (To-Do 17.1 and 17.2, 2026-11-07)
 
@@ -180,7 +180,7 @@ A `VfsFileSource` holds its factory and its `FileObject` (resolved once). Every 
 | `getCanonicalPath()` | The same: VFS normalises `.` and `..`, and can't resolve links, so it is lexical, as in parley-files-ftp |
 | `getParent()` / `getParentFile()` | `fo.getParent()` (null at the root) |
 | `getChild(path)` | `fo.resolveFile(path)` |
-| `toURL()` | A `filesource:` URL with `sourcetype=<type id>`, as parley-files-ftp makes (`filesource://user:pw@host/path?sourcetype=ftp`); an archive's carries the archive as a setting. `getVfsUri()` added for the plain VFS URI |
+| `toURL()` | A `filesource:` URL with `sourcetype=<type id>`, without the password, as parley-files-sftp makes (`filesource://user@host:port/path?sourcetype=vfssftp`; parley-files-ftp's carries the password); an archive's will carry the archive as a setting. `getVfsUri()` added for the plain VFS URI |
 | `getTitle()` | `fo.getName().getFriendlyURI()` |
 
 ### 5.2 Type and attributes
@@ -233,7 +233,7 @@ The hooks reach VFS internals, so:
 | FileSource | With VFS |
 |---|---|
 | `createNewFile()` | false if `exists()`; false if the parent isn't a folder; else `fo.createFile()`, true. Not atomic |
-| `mkdir()` | false if `exists()` or the parent doesn't exist; else `fo.createFolder()`. Not atomic |
+| `mkdir()` | false if `exists()` or the parent doesn't exist; else `fo.createFolder()`, and false if that fails because someone else made it meanwhile. Not claimed atomic |
 | `mkdirs()` | false if `exists()`; else `fo.createFolder()` |
 | `delete()` | `fo.delete()` (a non-empty folder is not deleted, as with `java.io.File`) |
 | `renameTo(dest)` | Only on the same factory (`isSameFileSystem`) and when `fo.canRenameTo(destFo)`; false if dest exists (VFS would delete it, 2.2.1); else `fo.moveTo(destFo)` |
@@ -292,8 +292,9 @@ stream is closed on its own, and `FileContent.close()` is never called while one
 2. calls the factory's `setConnectionProperties(URL)`, which sets the settings from the URL;
 3. connects, then calls `createFileSource(path)` with the path `FileSourceUri` takes from the URL.
 
-So with the handlers of 6.1, `FileSourceFactory.getFileSource("vfszip:file:///tmp/a.zip!/dir")` and
-`new URL("vfszip:...").openConnection()` work with **no change to parley-files**, on two conditions:
+So with the handlers of 6.1, `FileSourceFactory.getFileSource("vfszip:file:///tmp/a.zip!/dir")` works with **no change
+to parley-files**, on two conditions (`new URL("vfszip:...").openConnection()` needs this module's own
+`VfsUrlConnection`, found when built: section 9):
 
 1. **The factory's type id is the URL's scheme** (`vfszip`), since step 1 looks the factory up by it (Q9, decided).
 2. **The factory takes what `FileSourceUri` calls the path.** A nested URL (`vfszip:file:///tmp/a.zip!/dir`) is an
@@ -344,3 +345,31 @@ A `filesource:` URL (`filesource:/dir?sourcetype=vfszip&archive=...`) works as f
    `vfssftp`, `vfsftp`, `vfsftps` ... Replaces 17.1's "type id = the VFS scheme" (`zip`) and 17.2's `vfs-sftp`,
    `vfs-ftp`, `vfs-ftps` (17.1 was preliminary). One rule for every scheme, and never a clash with Parley's own `sftp`,
    `ftp` and `ftps`.
+
+## 9. Built (2026-11-13): the shared base and vfssftp
+
+Branch `vfs-project`. Built as sections 3 to 7 describe, with these differences, found while building:
+
+1. **`openConnection()`** (6.2): parley-files' `FileSourceURLConnection` takes only `filesource:` URLs, so the
+   `vfssftp` handler returns `VfsUrlConnection`, which opens the file with `FileSourceFactory.getFileSource(URL)` and
+   disconnects that factory when its stream is closed. No parley-files change. (parley-files-sftp's and
+   parley-files-ftp's handlers return `FileSourceURLConnection`, so their `openConnection()` fails the same way.)
+2. **`toURL()`** leaves out the password, as parley-files-sftp's does (5.1). The password can be given in the query
+   (`&password=...`) or come from a key.
+3. **`setConnectionProperties(URL)`** also takes any of the factory's settings named in the URL's query
+   (`?strictHostKeyChecking=no`).
+4. **`mkdir()`** returns false when VFS's create fails because someone else made the folder meanwhile (5.4).
+   `createNewFile()` and `mkdir()` are still not claimed atomic.
+5. **Password logins give VFS no identities**: otherwise VFS's sftp provider tries `~/.ssh/id_rsa` first.
+   `preferredAuthentications` is `password,keyboard-interactive` for a password and `publickey` for a key.
+6. **No generation counter**: a `VfsFileSource` resolves its `FileObject` again when it belongs to a file system the
+   factory no longer has (after a reconnect).
+7. **Tests** (7) run against an Apache MINA SFTP server each test class starts. `AbstractRandomAccessStreamTests`
+   writes at positions, which VFS's sftp can't, so `VfsSftpRandomAccessTest` checks reading at positions instead.
+   Of the shared suites, these are skipped, each saying why: `testFileAttributes` and `testCreateDir` (they set the
+   group's and other users' bits alone: Q2), `fileChannelMapsPrivateAndReadWrite` (writes at a position: the suite
+   skips it itself), `transferToStopsWhenTheTargetTakesNothing` (reads in one thread and closes in another: JSch
+   drops a stream whose reading thread has ended, README item 10), and the 11 cross-process lock cases. 79 tests,
+   15 skipped, none failing.
+8. **The permission hook** (5.3) works on VFS 2.10.0: `VfsSftpPermissionBitsTest` sets bits with chmod on the
+   server's directory and reads them back.
