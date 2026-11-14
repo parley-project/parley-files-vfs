@@ -255,6 +255,104 @@ public class VfsSftpFileSourceFactory extends VfsFileSourceFactory {
 		}
 	}
 
+	// ------------------------------------------------------------------ changing permission bits
+
+	/** SftpFileSystem's protected getChannel() and putChannel(ChannelSftp): found once. */
+	private static volatile Method getChannel;
+	private static volatile Method putChannel;
+	private static volatile boolean chmodFailed;
+
+	/**
+	 * Sets and clears bits with a chmod that carries only the mode, as parley-files-sftp does,
+	 * starting from the server's mode read just before (never a cached one, which would undo a change
+	 * made elsewhere) and keeping the setuid, setgid and sticky bits. VFS's own setters send the
+	 * file's whole stat back (size, owner, group, times and mode), which can cut back a file that
+	 * grew meanwhile and which a server can refuse (docs/DESIGN.md, 10.5). The channel comes from
+	 * VFS's protected getChannel(), found by reflection; if that fails (another VFS version), VFS's
+	 * own setters are used, logged once.
+	 */
+	@Override
+	protected Boolean changeMode(FileObject fo, int set, int clear) throws IOException {
+		if( chmodFailed ) {
+			return null;
+		}
+		Object fs = fo.getFileSystem();
+		Method get = getChannel;
+		Method put = putChannel;
+		if( get == null || put == null ) {
+			try {
+				get = findMethod(fs.getClass(), "getChannel");
+				put = findMethod(fs.getClass(), "putChannel", get.getReturnType());
+				get.setAccessible(true);
+				put.setAccessible(true);
+				getChannel = get;
+				putChannel = put;
+			} catch (ReflectiveOperationException | RuntimeException e) {
+				chmodFailed = true;
+				logError("Can't reach VFS's sftp channel (" + fs.getClass().getName()
+						+ "); permissions are set by VFS's own setters, which send the whole stat: " + e);
+				return null;
+			}
+		}
+		Object channel;
+		try {
+			channel = get.invoke(fs);
+		} catch (ReflectiveOperationException e) {
+			throw new IOException("Can't get an sftp channel: " + e.getCause(), e.getCause() == null ? e : e.getCause());
+		}
+		try {
+			return Chmod.change(channel, fo.getName().getPathDecoded(), set, clear);
+		} catch (LinkageError e) {
+			chmodFailed = true;
+			logError("Can't use JSch's chmod; permissions are set by VFS's own setters: " + e);
+			return null;
+		} finally {
+			try {
+				put.invoke(fs, channel);
+			} catch (ReflectiveOperationException e) {
+				logError("Can't return an sftp channel to VFS: " + e);
+			}
+			// VFS's cached stat is now out of date
+			fo.refresh();
+		}
+	}
+
+	private static Method findMethod(Class<?> cls, String name, Class<?>... args) throws NoSuchMethodException {
+		for (Class<?> c = cls; c != null; c = c.getSuperclass()) {
+			try {
+				return c.getDeclaredMethod(name, args);
+			} catch (NoSuchMethodException e) {
+				// try the superclass
+			}
+		}
+		throw new NoSuchMethodException(cls.getName() + "." + name);
+	}
+
+	/**
+	 * JSch's ChannelSftp, in a class of its own: it is loaded only when a permission is changed (so
+	 * after a connection, which needs JSch), never when the registry loads this factory.
+	 */
+	private static final class Chmod {
+
+		static Boolean change(Object channel, String path, int set, int clear) throws IOException {
+			com.jcraft.jsch.ChannelSftp c = (com.jcraft.jsch.ChannelSftp) channel;
+			try {
+				int perm = c.stat(path).getPermissions() & 07777;
+				int mode = (perm | set) & ~clear;
+				if( mode != perm ) {
+					// JSch's chmod sends a SETSTAT with only the permissions flag
+					c.chmod(mode, path);
+				}
+				return Boolean.TRUE;
+			} catch (com.jcraft.jsch.SftpException e) {
+				if( e.id == com.jcraft.jsch.ChannelSftp.SSH_FX_PERMISSION_DENIED || e.id == com.jcraft.jsch.ChannelSftp.SSH_FX_NO_SUCH_FILE ) {
+					return Boolean.FALSE;
+				}
+				throw new IOException("Can't change " + path + "'s permissions: " + e.getMessage(), e);
+			}
+		}
+	}
+
 	private static Method find(Class<?> cls) throws NoSuchMethodException {
 		for (Class<?> c = cls; c != null; c = c.getSuperclass()) {
 			try {

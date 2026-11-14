@@ -29,6 +29,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -60,6 +61,53 @@ public class VfsSftpPermissionBitsTest extends AbstractVfsPermissionBitsTest {
 			assertEquals(ownerOnly ? "rw-------" : "rw-r-xr-x", PosixFilePermissions.toString(Files.getPosixFilePermissions(local)));
 		} finally {
 			Files.setPosixFilePermissions(local, PosixFilePermissions.fromString("rw-------"));
+			assertTrue(f.delete());
+		}
+	}
+
+	/** A file with MODE, its local path; the caller deletes it. */
+	private static FileSource file(String name, String mode) throws IOException {
+		FileSource f = factory.createFileSource("/" + name);
+		try (OutputStream out = f.getOutputStream()) {
+			out.write("some data".getBytes());
+		}
+		Files.setPosixFilePermissions(server.home().resolve(name), PosixFilePermissions.fromString(mode));
+		f.refresh();
+		return f;
+	}
+
+	private static String mode(FileSource f) throws IOException {
+		return PosixFilePermissions.toString(Files.getPosixFilePermissions(server.home().resolve(f.getName())));
+	}
+
+	/**
+	 * Only the mode is sent (DESIGN 10.5): VFS's own setter sent the whole stat back, and the MINA
+	 * server refuses its times on a file the owner can't read, as an ordinary user.
+	 */
+	@Test
+	void aFileItsOwnerCantReadCanBeChanged() throws IOException {
+		FileSource f = file("unreadable.txt", "-w-------");
+		try {
+			assertTrue(f.setReadable(true));
+			assertEquals("rw-------", mode(f));
+			assertTrue(f.canOwnerRead(), "VFS's cached stat is refreshed");
+		} finally {
+			Files.setPosixFilePermissions(server.home().resolve(f.getName()), PosixFilePermissions.fromString("rw-------"));
+			assertTrue(f.delete());
+		}
+	}
+
+	/** The change starts from the server's mode, not a cached one, so a change made elsewhere stays. */
+	@Test
+	void aChangeMadeElsewhereIsKept() throws IOException {
+		FileSource f = file("elsewhere.txt", "rw-------");
+		try {
+			assertEquals("rw-------", "" + (f.canOwnerRead() ? 'r' : '-') + (f.canOwnerWrite() ? 'w' : '-') + "-------");
+			// changed on the server behind this FileSource's back
+			Files.setPosixFilePermissions(server.home().resolve(f.getName()), PosixFilePermissions.fromString("rw-r--r--"));
+			assertTrue(f.setExecutable(true));
+			assertEquals("rwxr--r--", mode(f));
+		} finally {
 			assertTrue(f.delete());
 		}
 	}

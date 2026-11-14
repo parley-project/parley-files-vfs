@@ -2,6 +2,13 @@
 
 ## parley-files-vfs 2.0.0 (unreleased)
 
+### Fixed (2026-11-13)
+
+- **vfssftp's permission setters send only the mode**, as parley-files-sftp does: a chmod starting from the server's
+  current mode, keeping the special bits, through `VfsFileSourceFactory.changeMode` (a new hook). VFS's own setter sent
+  the file's whole stat back, which a server can refuse (`TestVfsSftp.testPermissions` failed as an ordinary user) and
+  which could cut back a file that grew meanwhile. JSch is now an optional dependency.
+
 ### Added (2026-11-13: vfsftp and vfsftps)
 
 - **`VfsFtpFileSourceFactory`** (type id `vfsftp`) and **`VfsFtpsFileSourceFactory`** (`vfsftps`): parley-files-ftp's

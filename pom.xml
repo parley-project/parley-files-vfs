@@ -25,7 +25,7 @@
 		<junit.version>5.11.4</junit.version>
 		<commons-vfs2.version>2.10.0</commons-vfs2.version>
 		<!-- The maintained JSch fork parley-files-sftp-jsch uses; VFS's sftp provider takes it
-		     in place of com.jcraft:jsch (same packages). Tests only: users add it for sftp. -->
+		     in place of com.jcraft:jsch (same packages). Optional: users add it for sftp. -->
 		<jsch.version>2.28.7</jsch.version>
 		<sshd.version>2.19.0</sshd.version>
 		<!-- The version VFS 2.10.0 is built with -->
@@ -97,6 +97,15 @@
 			<optional>true</optional>
 		</dependency>
 
+		<!-- For vfssftp: compiled against (its permission changes are a chmod on VFS's JSch channel),
+		     optional, so it isn't passed on; users of vfssftp add it, as for every scheme -->
+		<dependency>
+			<groupId>com.github.mwiede</groupId>
+			<artifactId>jsch</artifactId>
+			<version>${jsch.version}</version>
+			<optional>true</optional>
+		</dependency>
+
 		<!-- The shared FileSource test suite -->
 		<dependency>
 			<groupId>us.bringardner.parley</groupId>
@@ -110,13 +119,7 @@
 			<artifactId>junit-jupiter</artifactId>
 			<scope>test</scope>
 		</dependency>
-		<!-- For the vfssftp tests (the first scheme built) -->
-		<dependency>
-			<groupId>com.github.mwiede</groupId>
-			<artifactId>jsch</artifactId>
-			<version>${jsch.version}</version>
-			<scope>test</scope>
-		</dependency>
+
 		<!-- The SFTP server the vfssftp tests start (Apache MINA SSHD, as parley-files-sftp's tests use on Windows) -->
 		<dependency>
 			<groupId>org.apache.sshd</groupId>

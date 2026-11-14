@@ -454,15 +454,30 @@ root, anonymous FTP with read and write: the server parley-files-ftp's tests use
    before close (an FTP upload is stored when it ends, as parley-files-ftp's NIO tests say too), and the cross-process
    lock cases. As root, `VfsFtpPermissionBitsTest` is skipped: Parley's FtpServer lists the bits its FileProxy reports,
    and for root every file is writable by its owner (parley-files-ftp's tests need an ordinary user too).
-5. Results: as an ordinary user 166 tests, 30 skipped, 1 failing, `TestVfsSftp.testPermissions` (10.5); as root
-   160, 30 skipped, none failing.
+5. Results (after 10.5): as an ordinary user 168 tests, 30 skipped, none failing; as root 162, 30 skipped, none
+   failing.
 
-### 10.5 Found: vfssftp's permission setters (open)
+### 10.5 vfssftp's permission setters send only the mode (decided 2026-11-13)
 
-Running the whole suite as an ordinary user (it had been run only as root) shows `TestVfsSftp.testPermissions`
-failing, on the branch as it was before this work too. VFS's sftp changes a permission by sending the file's whole
-stat back (size, owner and group, times, mode), not a chmod. The MINA test server refuses the times part on a file its
-owner can't read (Java sets times through a read handle); OpenSSH would allow it. Re-sending the size and times also
-means a file that grows between VFS's stat and its setstat could be cut back. Open: whether vfssftp should send only the
-mode (a plain chmod, reaching VFS internals as the bits hook does), or keep VFS's way and skip that case in the test.
+Running the whole suite as an ordinary user (it had been run only as root) showed `TestVfsSftp.testPermissions`
+failing, on the branch as it was before section 10 too. VFS's sftp changes a permission by sending the file's whole
+stat back (size, owner and group, times, mode), not a chmod. That is wrong for SFTP, where a SETSTAT changes only the
+attributes it flags: the old size can cut back a file that grew since VFS's stat, the old times overwrite newer ones,
+and the owner and group ask for a chown. Servers can refuse it: the MINA test server refuses the times on a file its
+owner can't read (Java sets times through a read handle). parley-files-sftp is right: its chmod carries only the mode
+(all three channels), starts from the mode read from the server just before, and keeps setuid, setgid and sticky.
 
+**Decided: vfssftp does as parley-files-sftp does.** A new base hook, `changeMode(FileObject, set, clear)` (null: use
+VFS's setters), which `VfsFileSource`'s setReadable, setWritable and setExecutable call first. vfssftp's reads the
+mode with a stat and sends JSch's `chmod` (a SETSTAT with only the permissions flag, checked in JSch 2.28.7's source)
+on a channel from VFS's protected `SftpFileSystem.getChannel()` / `putChannel()`, found by reflection as the bits hook
+is; the mode is masked with 07777, so the special bits stay; then VFS's cached stat is refreshed. If the reflection
+fails (another VFS version), VFS's own setters are used, logged once. JSch becomes an optional compile dependency (used
+from a nested class only, so the registry can load the factory without it), as commons-net is for ftp.
+
+What VFS can set is otherwise unchanged (Q2): the owner's bits, or everyone's at once; the group's and other users'
+setters still return false, though the hook could now set them (not done: to decide).
+
+Tests (`VfsSftpPermissionBitsTest`): a file its owner can't read has a bit changed; a mode changed on the server
+behind the FileSource's back is kept. Keeping the special bits can't be tested against MINA: Java's file API can't read
+or set setuid, setgid or sticky, so MINA drops them on any chmod.

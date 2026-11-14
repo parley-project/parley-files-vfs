@@ -497,19 +497,36 @@ public class VfsFileSource extends BaseObject implements FileSource {
 	@Override
 	public boolean setReadable(boolean b, boolean ownerOnly) throws IOException {
 		FileObject f = fo();
-		return f.exists() && f.setReadable(b, ownerOnly);
+		if( !f.exists() ) {
+			return false;
+		}
+		Boolean ret = changeMode(f, b, ownerOnly ? 0400 : 0444);
+		return ret != null ? ret : f.setReadable(b, ownerOnly);
 	}
 
 	@Override
 	public boolean setWritable(boolean b, boolean ownerOnly) throws IOException {
 		FileObject f = fo();
-		return f.exists() && f.setWritable(b, ownerOnly);
+		if( !f.exists() ) {
+			return false;
+		}
+		Boolean ret = changeMode(f, b, ownerOnly ? 0200 : 0222);
+		return ret != null ? ret : f.setWritable(b, ownerOnly);
 	}
 
 	@Override
 	public boolean setExecutable(boolean b, boolean ownerOnly) throws IOException {
 		FileObject f = fo();
-		return f.exists() && f.setExecutable(b, ownerOnly);
+		if( !f.exists() ) {
+			return false;
+		}
+		Boolean ret = changeMode(f, b, ownerOnly ? 0100 : 0111);
+		return ret != null ? ret : f.setExecutable(b, ownerOnly);
+	}
+
+	/** The scheme's own way of turning BITS on or off, or null for VFS's setters. */
+	private Boolean changeMode(FileObject f, boolean on, int bits) throws IOException {
+		return factory.changeModeOf(f, on ? bits : 0, on ? 0 : bits);
 	}
 
 	/** The owner's permission, as java.io.File.setReadable(b). */

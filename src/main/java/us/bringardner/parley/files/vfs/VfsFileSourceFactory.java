@@ -114,6 +114,20 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 	}
 
 	/**
+	 * Sets and clears permission bits, for a scheme that can do it better than VFS: null means use
+	 * VFS's own setters. vfssftp sends only the mode, as parley-files-sftp does; VFS's sftp sends
+	 * the file's whole stat back (docs/DESIGN.md, 10.5).
+	 * @param fo the file, which exists
+	 * @param set the bits to set (0400, 0444 ...)
+	 * @param clear the bits to clear
+	 * @return true if the bits are as asked, false if the server refused, null to use VFS's setters
+	 * @throws IOException if the server can't be asked
+	 */
+	protected Boolean changeMode(FileObject fo, int set, int clear) throws IOException {
+		return null;
+	}
+
+	/**
 	 * The file's modification time (ms), for a scheme whose provider needs help with it (VFS's ftp
 	 * can't give a directory's when it uses MDTM). The default is VFS's own.
 	 * @param fo the file, which exists
@@ -209,6 +223,11 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 	/** {@link #posixMode(FileObject)} for VfsFileSource, which is in this package */
 	Integer modeOf(FileObject fo) {
 		return posixMode(fo);
+	}
+
+	/** {@link #changeMode(FileObject, int, int)} for VfsFileSource */
+	Boolean changeModeOf(FileObject fo, int set, int clear) throws IOException {
+		return changeMode(fo, set, clear);
 	}
 
 	/** {@link #lastModified(FileObject)} for VfsFileSource */

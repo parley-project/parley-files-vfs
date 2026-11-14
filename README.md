@@ -128,4 +128,5 @@ Found by checking Commons VFS 2.10.0's code and its capabilities at run time (20
     set a permission bit or a time. vfsftp reads the bits by reflection.
 18. **VFS's sftp changes a permission by sending the whole stat back** (size, owner, group, times, mode), not a chmod.
     A server can refuse a part of it (Apache MINA refuses the times on a file its owner can't read), and a file that
-    grows between VFS's stat and its setstat could be cut back (docs/DESIGN.md, 10.5).
+    grows between VFS's stat and its setstat could be cut back. vfssftp sends a chmod with only the mode, read from the
+    server just before, as parley-files-sftp does (docs/DESIGN.md, 10.5).
