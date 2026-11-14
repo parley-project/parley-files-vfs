@@ -51,8 +51,9 @@ import us.bringardner.parley.files.credentials.CredentialRef;
  * <p>
  * Host keys are checked as parley-files-sftp checks them: against knownHosts (a local file,
  * ~/.ssh/known_hosts when it isn't set) unless strictHostKeyChecking is "no". A key (pasted, or
- * read from identityFile) is given to VFS as bytes. Logging in through an ssh-agent isn't
- * supported yet.
+ * read from identityFile) is given to VFS as bytes. With auth "Agent" it logs in with the keys a
+ * running ssh-agent holds (SSH_AUTH_SOCK, or the Windows OpenSSH agent), as parley-files-sftp's jsch
+ * provider does: the agent signs, so the private key never reaches this program.
  */
 public class VfsSftpFileSourceFactory extends VfsFileSourceFactory {
 
@@ -66,11 +67,17 @@ public class VfsSftpFileSourceFactory extends VfsFileSourceFactory {
 	public static final String PROP_PASSWORD = "password";
 	public static final String PROP_PRIVATE_KEY_FILE_NAME = "identityFile";
 	public static final String PROP_PRIVATE_KEY = "privateKey";
-	/** How to log in: {@link #AUTH_PASSWORD}, {@link #AUTH_KEY_FILE} or {@link #AUTH_KEY}. */
+	/** How to log in: {@link #AUTH_PASSWORD}, {@link #AUTH_KEY_FILE}, {@link #AUTH_KEY} or {@link #AUTH_AGENT}. */
 	public static final String PROP_AUTH = "auth";
 	public static final String AUTH_PASSWORD = "Password";
 	public static final String AUTH_KEY_FILE = "Private Key File";
 	public static final String AUTH_KEY = "Private Key";
+	/**
+	 * Log in with the keys an ssh-agent holds (SSH_AUTH_SOCK, or the Windows OpenSSH agent), as
+	 * parley-files-sftp does; needs Java 16 or later on macOS and Linux. Only the agent's keys are
+	 * tried: no password, and no key file.
+	 */
+	public static final String AUTH_AGENT = "Agent";
 	/** A local known_hosts file; empty means ~/.ssh/known_hosts. */
 	public static final String PROP_KNOWN_HOSTS = "knownHosts";
 	/** "yes" (the default) connects only to servers whose key is known; "no" accepts any. */
@@ -145,7 +152,7 @@ public class VfsSftpFileSourceFactory extends VfsFileSourceFactory {
 		this.strictHostKeyChecking = value;
 	}
 
-	/** How this factory logs in: as set, else a pasted key, else a key file, else a password. */
+	/** How this factory logs in: as set (ssh-agent only when set), else a pasted key, else a key file, else a password. */
 	public String getAuth() {
 		if( auth != null ) {
 			return auth;
@@ -185,13 +192,57 @@ public class VfsSftpFileSourceFactory extends VfsFileSourceFactory {
 			b.setKnownHosts(options, new File(knownHosts));
 		}
 		String a = getAuth();
-		if( AUTH_KEY.equals(a) || AUTH_KEY_FILE.equals(a) ) {
+		if( AUTH_AGENT.equals(a) ) {
+			Agent.configure(b, options);
+		} else if( AUTH_KEY.equals(a) || AUTH_KEY_FILE.equals(a) ) {
 			b.setIdentityProvider(options, new BytesIdentityInfo(resolvePrivateKey(), null));
 			b.setPreferredAuthentications(options, "publickey");
 		} else {
 			// no identities: VFS would otherwise try ~/.ssh/id_rsa
 			b.setIdentityProvider(options, new IdentityProvider[0]);
 			b.setPreferredAuthentications(options, "password,keyboard-interactive");
+		}
+	}
+
+	/**
+	 * Logging in through ssh-agent, in a class of its own: JSch's agent classes are loaded only
+	 * when auth is Agent, so the factory loads without JSch on the class path. Package-private for
+	 * the tests, which list the same agent's keys.
+	 */
+	static final class Agent {
+
+		/** Only the agent's keys: VFS adds no identity of its own, and no password is tried. */
+		static void configure(SftpFileSystemConfigBuilder b, FileSystemOptions options) throws IOException {
+			com.jcraft.jsch.AgentConnector c = connector();
+			b.setIdentityRepositoryFactory(options, jsch -> new com.jcraft.jsch.AgentIdentityRepository(c));
+			b.setIdentityProvider(options, new IdentityProvider[0]);
+			b.setPreferredAuthentications(options, "publickey");
+		}
+
+		/**
+		 * The running ssh-agent, as parley-files-sftp's jsch provider finds it: the Windows OpenSSH
+		 * agent on Windows, otherwise the one SSH_AUTH_SOCK names (Java 16 or later for its Unix
+		 * domain socket). It opens a connection for each request, so there is nothing to close.
+		 */
+		static com.jcraft.jsch.AgentConnector connector() throws IOException {
+			try {
+				com.jcraft.jsch.AgentConnector c;
+				if( System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("windows") ) {
+					c = new com.jcraft.jsch.WindowsSSHAgentConnector();
+				} else {
+					String sock = System.getenv("SSH_AUTH_SOCK");
+					if( sock == null || sock.isEmpty() ) {
+						throw new IOException("No ssh-agent: SSH_AUTH_SOCK isn't set");
+					}
+					c = new com.jcraft.jsch.SSHAgentConnector(new com.jcraft.jsch.UnixDomainSocketFactory(), java.nio.file.Paths.get(sock));
+				}
+				if( !c.isAvailable() ) {
+					throw new IOException("The ssh-agent isn't running or can't be reached");
+				}
+				return c;
+			} catch (com.jcraft.jsch.AgentProxyException e) {
+				throw new IOException("Can't use the ssh-agent: " + e.getMessage(), e);
+			}
 		}
 	}
 
@@ -372,7 +423,7 @@ public class VfsSftpFileSourceFactory extends VfsFileSourceFactory {
 				ConnectionSetting.text(PROP_HOST, "Host").asRequired(),
 				ConnectionSetting.integer(PROP_PORT, "Port", 1L, 65535L).withDefault("" + DEFAULT_PORT).asRequired(),
 				ConnectionSetting.text(PROP_USER, "User").asRequired(),
-				ConnectionSetting.choice(PROP_AUTH, "Log in with", AUTH_PASSWORD, AUTH_KEY_FILE, AUTH_KEY),
+				ConnectionSetting.choice(PROP_AUTH, "Log in with", AUTH_PASSWORD, AUTH_KEY_FILE, AUTH_KEY, AUTH_AGENT),
 				ConnectionSetting.secret(PROP_PASSWORD, "Password").visibleWhen(PROP_AUTH, AUTH_PASSWORD),
 				ConnectionSetting.localFile(PROP_PRIVATE_KEY_FILE_NAME, "Private key file").asRequired()
 					.withDescription("An OpenSSH or PEM private key file").visibleWhen(PROP_AUTH, AUTH_KEY_FILE),
@@ -430,7 +481,7 @@ public class VfsSftpFileSourceFactory extends VfsFileSourceFactory {
 		if( p.containsKey(PROP_AUTH) ) {
 			String a = p.getProperty(PROP_AUTH, "").trim();
 			auth = null;
-			for (String known : new String[] { AUTH_PASSWORD, AUTH_KEY_FILE, AUTH_KEY }) {
+			for (String known : new String[] { AUTH_PASSWORD, AUTH_KEY_FILE, AUTH_KEY, AUTH_AGENT }) {
 				if( known.equalsIgnoreCase(a) ) {
 					auth = known;
 				}

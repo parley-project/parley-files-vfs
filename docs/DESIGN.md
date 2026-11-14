@@ -152,7 +152,8 @@ file system, identified by its root URI:
    reaching into VFS's JSch. Not chosen: setting a `HostKeyRepository` on VFS's `JSch` from inside
    `setIdentityRepositoryFactory` (that hook is meant for identities, so it would be a side effect VFS doesn't promise
    to keep), and a hidden `FileProxy` copy of the known hosts (more code for the same file).
-5. Agent login (`auth` = Agent): later, through `setIdentityRepositoryFactory` with JSch's agent support.
+5. Agent login (`auth` = Agent): built 2026-11-14 through `setIdentityRepositoryFactory` with JSch's agent support
+   (section 12).
 6. JSch: the maintained `com.github.mwiede:jsch`, as parley-files-sftp-jsch uses, which makes `vfssftp` against
    `sftp-jsch` the cleanest 17.2 pair.
 
@@ -509,3 +510,25 @@ connecting to a server that accepts and never answers waits for ever (README, "W
 documented, not fixed. The fix, if it is ever wanted: set VFS's session timeout (`setSessionTimeout`) in
 `VfsSftpFileSourceFactory.configure`, after checking what JSch does with it once connected (it is also the read
 timeout for the whole session).
+
+## 12. Logging in with an ssh-agent, and the key logins tested (2026-11-14)
+
+Branch `vfs-project2`, from To-Do 17.1. vfssftp now has parley-files-sftp's fourth login, `auth` = `Agent`, so every
+saved sftp connection works as a vfssftp one.
+
+1. **How.** `configure` gives VFS an `IdentityRepositoryFactory` that returns JSch's `AgentIdentityRepository` on the
+   running agent, found as parley-files-sftp's jsch provider finds it: the Windows OpenSSH agent on Windows, otherwise
+   the socket SSH_AUTH_SOCK names (`UnixDomainSocketFactory`, Java 16 or later). VFS sets the repository before it adds
+   identities, and it is given none, so only the agent's keys are offered; `preferredAuthentications` is `publickey`.
+2. **Errors at connect.** No SSH_AUTH_SOCK: "No ssh-agent: SSH_AUTH_SOCK isn't set"; an agent that can't be reached
+   says so. Both are found in `configure`, before VFS connects, with parley-files-sftp's messages.
+3. **Nothing to close.** JSch's agent connector opens a connection to the agent for each request.
+4. **JSch stays optional.** The agent code is in a nested class (`Agent`), loaded only when `auth` is Agent.
+5. **Tests** (`VfsSftpLoginTest`, against the MINA test server, which now also takes keys): a key file in OpenSSH
+   format and in PEM, a pasted PEM key, a missing key file, a key the server doesn't know (refused, with the right
+   password also set and not tried), the agent's keys (with a wrong password set), and no agent. The agent test uses
+   the running agent and is skipped without one. As an ordinary user 177 tests, 29 skipped, none failing, with and
+   without an agent; as root 171, 29 skipped.
+6. **Found while testing.** JSch reads every key format ssh-keygen writes (OpenSSH, PEM PKCS#1 and SEC1, PKCS#8) for
+   RSA, ECDSA and Ed25519. An ECDSA key in PKCS#8 written by Java's `getEncoded()` is refused ("invalid privatekey"):
+   it leaves out the public key, which ssh-keygen's PKCS#8 has and JSch needs. The PEM tests use RSA for that reason.

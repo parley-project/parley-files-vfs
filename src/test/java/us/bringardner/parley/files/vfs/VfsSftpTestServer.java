@@ -29,14 +29,19 @@ import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.PublicKey;
 import java.security.spec.ECGenParameterSpec;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.Properties;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.sshd.common.config.keys.PublicKeyEntry;
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
 import org.apache.sshd.common.keyprovider.KeyPairProvider;
+import org.apache.sshd.common.util.buffer.ByteArrayBuffer;
 import org.apache.sshd.server.SshServer;
 import org.apache.sshd.sftp.server.SftpSubsystemFactory;
 
@@ -44,8 +49,9 @@ import us.bringardner.parley.files.test.FileSourceTestSupport;
 
 /**
  * An SFTP server for one test class: Apache MINA SSHD on the loopback address, on a free port,
- * serving a new directory of its own as "/" to one user. Start it, use it, stop it (the shared
- * suites stop the one in {@code FileSourceTestSupport.server} after the class).
+ * serving a new directory of its own as "/" to one user, who logs in with the password or with a
+ * key given to {@link #authorize}. Start it, use it, stop it (the shared suites stop the one in
+ * {@code FileSourceTestSupport.server} after the class).
  */
 final class VfsSftpTestServer implements VfsTestServer {
 
@@ -58,6 +64,8 @@ final class VfsSftpTestServer implements VfsTestServer {
 	private final Path home;
 	private final KeyPair hostKey;
 	private SshServer sshd;
+	/** The public keys USER may log in with, as SSH key blobs in Base64. */
+	private final Set<String> authorizedKeys = ConcurrentHashMap.newKeySet();
 
 	VfsSftpTestServer() throws IOException {
 		home = Paths.get(FileSourceTestSupport.scratchDir("vfs-sftp-" + COUNT.incrementAndGet()));
@@ -85,6 +93,7 @@ final class VfsSftpTestServer implements VfsTestServer {
 		s.setPort(0);
 		s.setKeyPairProvider(KeyPairProvider.wrap(hostKey));
 		s.setPasswordAuthenticator((u, p, session) -> USER.equals(u) && PASSWORD.equals(p));
+		s.setPublickeyAuthenticator((u, k, session) -> USER.equals(u) && authorizedKeys.contains(blob(k)));
 		s.setSubsystemFactories(Collections.singletonList(new SftpSubsystemFactory()));
 		s.setFileSystemFactory(new VirtualFileSystemFactory(home));
 		s.start();
@@ -117,6 +126,23 @@ final class VfsSftpTestServer implements VfsTestServer {
 	@Override
 	public Path home() {
 		return home;
+	}
+
+	/** Lets USER log in with this key. */
+	void authorize(PublicKey key) {
+		authorizedKeys.add(blob(key));
+	}
+
+	/** Lets USER log in with the key in this SSH public key blob (as an ssh-agent lists it). */
+	void authorize(byte[] sshPublicKeyBlob) {
+		authorizedKeys.add(Base64.getEncoder().encodeToString(sshPublicKeyBlob));
+	}
+
+	/** The key as an SSH public key blob (no length before it), in Base64. */
+	private static String blob(PublicKey key) {
+		ByteArrayBuffer b = new ByteArrayBuffer();
+		b.putRawPublicKey(key);
+		return Base64.getEncoder().encodeToString(b.getCompactData());
 	}
 
 	/** A known_hosts line for this server, as OpenSSH writes one for a port other than 22. */

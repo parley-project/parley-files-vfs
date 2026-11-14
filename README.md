@@ -57,7 +57,11 @@ FileSource same = FileSourceFactory.getFileSource("vfssftp://tony@host/home/tony
 Every permission bit can be set, each alone (a chmod with only the mode, as parley-files-sftp sends). What it can't
 do, from VFS: write at a position in a file (`getRandomAccessStream("rw")` is refused; `"r"` works), make links, or say
 who owns a file. `createNewFile()` and `mkdir()` are **not atomic**
-(`getCapabilities()` says so). Logging in through an ssh-agent isn't supported yet.
+(`getCapabilities()` says so).
+
+It logs in with a password, a key file (`identityFile`, OpenSSH or PEM), a pasted key (`privateKey`), or the keys a
+running ssh-agent holds (`auth` = `Agent`: SSH_AUTH_SOCK, or the Windows OpenSSH agent; Java 16 or later on macOS and
+Linux), as parley-files-sftp's jsch provider does. A key or agent login tries only keys, never the password.
 
 ### vfssftp's deficiencies, compared with parley-files-sftp
 
@@ -164,8 +168,10 @@ sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src
 | B4 | No owner, group or other bits in VFS's API [9] | The nine bits read from VFS's sftp provider by reflection (protected `getPermissions(false)`); false bits, logged once, if a VFS version lacks it | `VfsSftpPermissionBitsTest.bitsAreTheServers` |
 | B5 | A permission change sends the whole stat back (size, owner, group, times, mode) [18] | A chmod with only the mode, from the server's mode read just before, special bits kept, on VFS's channel reached by reflection; VFS's setters if that fails (DESIGN 10.5) | `aFileItsOwnerCantReadCanBeChanged`, `aChangeMadeElsewhereIsKept`; the special bits can't be tested on MINA (Java can't hold them) |
 | B6 | The group's and other users' bits can't be set alone | Each set alone by that chmod (DESIGN 10.6) | `groupAndOtherBitsAlone`, `TestVfsSftp.testPermissions`, `VfsSftpNioProviderTests`: `testFileAttributes`, `testCreateDir` |
-| B7 | `knownHosts` and key files must be `java.io.File` | `knownHosts` is a local file (as in parley-files-sftp); a key is given to VFS as bytes | `aKnownHostKeyIsAccepted` (the key: not tested) |
-| B8 | JSch needed on the class path to load anything | JSch is used from a nested class only, so the registry loads the factory without it | Not tested |
+| B7 | `knownHosts` and key files must be `java.io.File` | `knownHosts` is a local file (as in parley-files-sftp); a key is given to VFS as bytes | `aKnownHostKeyIsAccepted`; `VfsSftpLoginTest`: `aKeyFileLogsIn` (OpenSSH), `aPemKeyFileLogsIn`, `aPastedKeyLogsIn`, `aMissingKeyFileSaysWhichFile` |
+| B8 | JSch needed on the class path to load anything | JSch is used from nested classes only, so the registry loads the factory without it | Not tested |
+| B9 | A key login also tries the password, and with no key given, `~/.ssh/id_rsa` | A key or agent login tries only keys (`preferredAuthentications` `publickey`, no identities of VFS's own) | `aKeyTheServerDoesntKnowIsRefusedAndNoPasswordIsTried`; `theAgentLogsIn` (with a wrong password set) |
+| B10 | No ssh-agent login of its own (VFS takes a JSch `IdentityRepository` through `setIdentityRepositoryFactory`) | `auth` = `Agent`: JSch's `AgentIdentityRepository` on the running agent, found as parley-files-sftp's jsch provider finds it; an error naming SSH_AUTH_SOCK if there is none | `theAgentLogsIn`, `withNoAgentRunningAgentLoginSaysSo`, `agentIsAChoiceAndRoundTrips` |
 
 ### C. vfsftp and vfsftps (`VfsFtpFileSourceFactory`, `VfsFtpsFileSourceFactory`, `VfsTrustManager`)
 
@@ -188,7 +194,8 @@ sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src
 
 ### D. Tests that don't run, and why
 
-With the test server each class starts: as an ordinary user 169 tests, 28 skipped, none failing; as root 163.
+With the test server each class starts: as an ordinary user 177 tests, 29 skipped, none failing (with or without an
+ssh-agent: D10); as root 171.
 
 | # | Test | Skipped for | Count |
 |---|---|---|---|
@@ -201,6 +208,7 @@ With the test server each class starts: as an ordinary user 169 tests, 28 skippe
 | D7 | `AbstractVfsPermissionBitsTest` (both schemes) | On Windows: POSIX bits | the class |
 | D8 | `AbstractRandomAccessStreamTests` | Not run at all: it writes at positions; `AbstractVfsRandomAccessTest` reads at positions instead, and checks that "rw" is refused | not counted |
 | D9 | `TestVfsFtp.testPermissions` | Replaced, not skipped: the shared test toggles bits; vfsftp's checks that every setter returns false and changes nothing (C13) | not counted |
+| D10 | `VfsSftpLoginTest`: `theAgentLogsIn`, or `withNoAgentRunningAgentLoginSaysSo` | One of the two, by whether an ssh-agent with a key is running (SSH_AUTH_SOCK); the second also on Windows | 1 |
 
 ## What VFS does that matters here
 
