@@ -59,6 +59,28 @@ do, from VFS: write at a position in a file (`getRandomAccessStream("rw")` is re
 who owns a file. `createNewFile()` and `mkdir()` are **not atomic**
 (`getCapabilities()` says so). Logging in through an ssh-agent isn't supported yet.
 
+### vfssftp's deficiencies, compared with parley-files-sftp
+
+For SFTP, use parley-files-sftp (type id `sftp`) unless you need VFS itself: To-Do 17.2 compared the two
+(parley-files-sftp with its jsch provider, so both run on the same JSch) on mx1 against OpenSSH, with the results in
+parley-files-compare's `docs/RESULTS.md` (2026-11-13). vfssftp stays available. Where it falls short:
+
+1. **It can hang for ever on a server that accepts the connection and never answers.** VFS's connect timeout covers
+   only its channels: it starts the SSH session with no timeout (item 19 below). parley-files-sftp gives up after its
+   `connectTimeout` (30 s).
+2. **No owner or group** (`getOwner()` and `getGroup()` have no name), **no links** (it can't make one or say where one
+   leads), **no access or creation time**.
+3. **Nothing atomic**: `createNewFile()` and `mkdir()` check, then act. parley-files-sftp's are atomic.
+4. **Can't write at a position** (`getRandomAccessStream("rw")`), so one of the shared NIO tests
+   (`fileChannelMapsPrivateAndReadWrite`) is skipped. parley-files-sftp with jsch can't either, but passes that test.
+5. **Slower with small files**: creating 1,000 took 1.19 s against 0.59 s, deleting them 0.35 s against 0.30 s.
+   Connecting and big transfers are the same (100 MB at about 125-145 MB/s for both).
+6. **Larger**: 9 jars, 2.9 MB (with JSch), against 6 jars, 1.2 MB; about 330 more classes loaded.
+
+Both pass the shared suites equally where both can run a test; both recover from a dropped connection on the next
+call, keep 8 threads on one connection right, and leave part of the file when an upload is cut
+(parley-files-sftp's `safeOverwrite` setting avoids that).
+
 ## Using vfsftp and vfsftps
 
 `vfsftp` and `vfsftps` take parley-files-ftp's settings, with the same names and defaults (`host`, `port` 21 or 990,
@@ -206,3 +228,8 @@ Found by checking Commons VFS 2.10.0's code and its capabilities at run time (20
     A server can refuse a part of it (Apache MINA refuses the times on a file its owner can't read), and a file that
     grows between VFS's stat and its setstat could be cut back. vfssftp sends a chmod with only the mode, read from the
     server just before, as parley-files-sftp does (docs/DESIGN.md, 10.5).
+19. **VFS's sftp starts the SSH session with no timeout.** Its connect timeout (`setConnectTimeout`) is used only for
+    its channels; JSch's `Session.connect()` is called without one, and only the separate session timeout
+    (`setSessionTimeout`, unset by default) would end the wait. So against a server that accepts the connection and
+    never answers, connecting waits for ever (To-Do 17.2: no answer in 120 s on mx1, nor in 400 s in a cloud check).
+    vfssftp leaves it as VFS has it (decided 2026-11-13, documented rather than fixed).

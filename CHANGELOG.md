@@ -2,6 +2,12 @@
 
 ## parley-files-vfs 2.0.0 (unreleased)
 
+### Documented (2026-11-13, after To-Do 17.2)
+
+- **vfssftp's deficiencies, compared with parley-files-sftp** (README): it can hang on a server that never answers
+  (VFS starts the SSH session with no timeout), has no owner, group, links or access time, nothing atomic, and is
+  slower with small files and larger. It stays available (DESIGN 11).
+
 ### Added (2026-11-13)
 
 - **vfssftp sets the group's and other users' permission bits alone** (`setGroupReadable` and the like), through its

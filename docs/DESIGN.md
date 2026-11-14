@@ -4,7 +4,8 @@ As of 2026-11-13, against Apache Commons VFS 2.10.0 (the current release, Java 8
 (release-2.0.0). Sections 1 and 2 are the decisions already in the Parley 2.0.0 To-Do doc (17.1, 17.2) and what VFS
 itself does; sections 3 to 7 are the design; section 8 records the decisions made on it (2026-11-13) and what is still
 open; section 9 records what was built (the shared base and `vfssftp`, 2026-11-13) and where it differs from the design;
-section 10 records `vfsftp` and `vfsftps` (2026-11-13), the next schemes, which To-Do 17.2 needs. Every workaround and
+section 10 records `vfsftp` and `vfsftps` (2026-11-13), the next schemes, which To-Do 17.2 needs; section 11 what
+was decided after 17.2's comparison. Every workaround and
 every skipped test, with the test that covers it, is listed in the README, "Workarounds and skipped tests".
 
 ## 1. Decisions already made (To-Do 17.1 and 17.2, 2026-11-07)
@@ -495,3 +496,16 @@ bits couldn't be set are gone: `TestVfsSftp` runs the shared `testPermissions` a
 `VfsSftpNioProviderTests` runs `testFileAttributes` and `testCreateDir` (rwxr-x---) again. Results: as an ordinary
 user 169 tests, 28 skipped, none failing; as root 163, 28 skipped, none failing.
 
+## 11. After To-Do 17.2: vfssftp stays available, its deficiencies documented (decided 2026-11-13)
+
+17.2 compared parley-files-sftp (jsch), vfssftp and VFS's sftp used directly on mx1 (parley-files-compare,
+`docs/RESULTS.md`). parley-files-sftp came out ahead on features, footprint and small files, and level on big
+transfers and the shared suites. Decided 22:57 ET: **vfssftp stays registered**, with its `vfssftp:` URL scheme, and
+the README lists where it falls short of parley-files-sftp ("vfssftp's deficiencies"). Considered first and
+dropped: taking it out of the registry, and fixing its hang.
+
+The hang is VFS's: its connect timeout covers only its channels, and `Session.connect()` gets no timeout, so
+connecting to a server that accepts and never answers waits for ever (README, "What VFS does", item 19). It is
+documented, not fixed. The fix, if it is ever wanted: set VFS's session timeout (`setSessionTimeout`) in
+`VfsSftpFileSourceFactory.configure`, after checking what JSch does with it once connected (it is also the read
+timeout for the whole session).
