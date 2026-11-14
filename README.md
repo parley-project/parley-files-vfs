@@ -100,6 +100,31 @@ managers (`SecureBaseObject.getDefaultTrustManagers()`) or the JVM's, and for th
 do, from VFS: write at a position, set permission bits or times, send ACCT (parley-files-ftp's `account`), or make
 links. A directory's time is the listing's (often to the minute); a file's is to the second where the server has MDTM.
 
+### vfsftp's and vfsftps's deficiencies, compared with parley-files-ftp
+
+For FTP and FTPS, use parley-files-ftp (type ids `ftp` and `ftps`) unless you need VFS itself: To-Do 17.2 compared
+them on mx1 against Parley's FtpServer (FTPS as implicit TLS), with the results in parley-files-compare's
+`docs/RESULTS.md` (2026-11-13, and the timeout rerun of 2026-11-14). vfsftp and vfsftps stay available. Where they
+fall short:
+
+1. **Much slower with small files and over TLS.** Over FTP, creating 1,000 small files took 46.9 s against 0.73 s
+   (about 64 times). Over FTPS, a 1 MB upload took 0.152 s against 0.015 s, 100 small files 14.6 s against 0.71 s,
+   and 8 threads 17.6 s against 5.7 s. Big transfers are close (100 MB within 25 %).
+2. **Can't set permission bits or times** (VFS's ftp has no SITE CHMOD or MFMT), so three of the shared tests that set
+   permissions fail: 22 passed against 26 for parley-files-ftp. A directory's time is the listing's.
+3. **Can't write at a position** (`getRandomAccessStream("rw")`), so `fileChannelMapsPrivateAndReadWrite` is skipped.
+4. **Nothing atomic**: `mkdir()` checks, then acts. parley-files-ftp's is atomic.
+5. **vfsftp gives up on a server that never answers after twice its timeout** (60 s with `timeout` 30s); vfsftps
+   after 30 s. parley-files-ftp gives up after 30 s for both since 2026-11-14 (branch `ftp-connect-timeout`).
+6. **Larger**: 9 jars, 2.5 MB, against 7 jars, 1.1 MB; about 460 more classes loaded over FTP (1,231 against 773).
+
+Where VFS is ahead: deleting 1,000 small files took 0.25-0.27 s against 0.41 s, and a file another connection adds
+shows at once (parley-files-ftp caches a folder's listing for its `attributeCacheTtl`, 2 s by default). Both fail
+`fileChannelForceSendsWhatIsHeld` (an FTP upload is stored when it ends), fail at once when the connection is cut,
+recover on the next call, keep 8 threads on one connection right, and leave no file when an upload is cut. VFS's
+ftps used directly accepts a certificate it wasn't told to trust (item 14 below); vfsftp and vfsftps refuse one, as
+parley-files-ftp does.
+
 ## Workarounds and skipped tests
 
 Everything parley-files-vfs does differently from VFS left to itself, and every test that doesn't run, with where it is
