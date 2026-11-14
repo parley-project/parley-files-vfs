@@ -108,18 +108,25 @@ public abstract class VfsFileSourceFactory extends FileSourceFactory {
 		return null;
 	}
 
-	/** Throws an IOException naming the library to add when the scheme's isn't on the class path. */
+	/**
+	 * Throws an IOException naming the library to add when the scheme's isn't on the class path.
+	 * {@link #libraryClass()} may name several classes, separated by commas (vfshdfs: VFS's HDFS
+	 * provider and Hadoop's), each of which must be there.
+	 */
 	private void checkLibrary() throws IOException {
-		String cls = libraryClass();
-		if( cls == null ) {
+		String classes = libraryClass();
+		if( classes == null ) {
 			return;
 		}
-		try {
-			Class.forName(cls, false, getClass().getClassLoader());
-		} catch (ClassNotFoundException | LinkageError e) {
-			IOException ex = new IOException(getTypeId() + " needs " + libraryName() + " on the class path (" + cls + " is missing)");
-			ex.initCause(e);
-			throw ex;
+		for (String each : classes.split(",")) {
+			String cls = each.trim();
+			try {
+				Class.forName(cls, false, getClass().getClassLoader());
+			} catch (ClassNotFoundException | LinkageError e) {
+				IOException ex = new IOException(getTypeId() + " needs " + libraryName() + " on the class path (" + cls + " is missing)");
+				ex.initCause(e);
+				throw ex;
+			}
 		}
 	}
 

@@ -39,6 +39,7 @@ module doesn't depend on them: add the one for each scheme you use.
 | `vfsgz` (`gz`) | nothing | its one file |
 | `vfsbz2` (`bz2`) | `org.apache.commons:commons-compress` | its one file |
 | `vfshttp`, `vfshttps` (`http`, `https`) | `org.apache.httpcomponents.client5:httpclient5` | no (read only; folders from the server's listing pages) |
+| `vfshdfs` (`hdfs`) | `org.apache.commons:commons-vfs2-hdfs` and Hadoop's client (`org.apache.hadoop:hadoop-client`): VFS's pom drops Hadoop's own dependencies | yes (random access: read only) |
 | `vfswebdav`, `vfswebdavs` (`webdav4`, `webdav4s`) | `org.apache.commons:commons-vfs2-jackrabbit2` (VFS's WebDAV provider is its own artifact; it brings httpclient 4 and jackrabbit-webdav) | yes, no append (random access: read only) |
 
 Each type id is `vfs` + the VFS scheme (for WebDAV, `vfswebdav` on VFS's current `webdav4`), and is also the scheme of its URLs: `vfszip:file:///tmp/a.zip!/dir` is VFS's
@@ -201,6 +202,19 @@ checked to be on the server at the size written. Certificates are checked as for
 apart, and folders listed, with this module's own PROPFIND: VFS's fails on servers that indent their answers (Tomcat).
 Parley's own WebDAV FileSource is planned (To-Do 17.57).
 
+## Using vfshdfs
+
+Hadoop's HDFS, read and write. Settings: the name node's `host` and `port` (8020), and optionally `config`, a local
+Hadoop configuration file (`hdfs-site.xml`, `core-site.xml`) for what the cluster needs beyond its address. The user
+is Hadoop's (the local user, or HADOOP_USER_NAME). Add `org.apache.commons:commons-vfs2-hdfs` **and** Hadoop's client
+(`org.apache.hadoop:hadoop-client`): VFS's pom drops every dependency of Hadoop's, so its HDFS provider can't run alone.
+
+```java
+FileSource f = FileSourceFactory.getFileSource("vfshdfs://namenode:8020/user/tony/a.txt");
+```
+
+Its tests run only against a cluster you give: `mvn test -Dparley.test.hdfs=hdfs://namenode:8020/a/writable/dir`.
+
 ## Workarounds and skipped tests
 
 Everything parley-files-vfs does differently from VFS left to itself, and every test that doesn't run, with where it is
@@ -309,6 +323,14 @@ sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src
 | H6 | No append | Refused, saying so (decided) | `VfsWebdavTrapsTest.appendIsRefused` |
 | H7 | Reading from the end asks for a range there: 416, and VFS throws (every scheme with ranges) | An empty stream, without asking | `AbstractVfsRandomAccessTest.streamFromAPosition` (vfswebdav) |
 
+### I. vfshdfs (`VfsHdfsFileSourceFactory`)
+
+| # | VFS left to itself | What vfshdfs does | Tested by |
+|---|---|---|---|
+| I1 | `commons-vfs2-hdfs` alone can't run: VFS's pom drops Hadoop's dependencies [26] | connect checks for VFS's provider and Hadoop's `FileSystem` and names both libraries to add | `VfsHdfsFactoryTest.withoutTheLibraryConnectSaysWhatToAdd` |
+| I2 | An unreachable name node: "Unknown message with code \"Unable to check existence \"" | The reason (`ConnectException` ...) | `withTheLibrary` (hdfs profile) |
+| I3 | Hadoop at compile time for its configuration option | The configuration file is given to VFS by reflection | `withTheLibrary` (hdfs profile) |
+
 ### D. Tests that don't run, and why
 
 With the test server each class starts: as an ordinary user 185 tests, 29 skipped, none failing (with or without an
@@ -331,6 +353,7 @@ ssh-agent: D10); as root 179.
 | D14 | vfswebdav: `TestVfsWebdav.testAppend`, `VfsWebdavTrapsTest.appendAddsToTheEnd`, and `VfsWebdavLockTest`'s `fileChannelLocksTheFile`, `fileChannelRules`, `closeRacingLockAndReleaseLeavesNothingHeld` (they open with APPEND) | vfswebdav refuses append (H6) | 5 |
 | D15 | `VfsWebdavNioProviderTests`: `testFileAttributes`, `testCreateDir`, `fileChannelForceSendsWhatIsHeld` | WebDAV has no permission bits; an upload is sent when its stream closes | 3 |
 | D16 | `AbstractLockTests`' cross-process cases (`VfsWebdavLockTest`) | As D1 | 11 |
+| D17 | `TestVfsHdfs`; `VfsHdfsFactoryTest`: `aClusterUrlOpens`, `withTheLibrary` | No cluster given (`-Dparley.test.hdfs=hdfs://namenode:8020/dir`); `withTheLibrary` needs the hdfs profile | the class, 2 |
 | D10 | `VfsSftpLoginTest`: `theAgentLogsIn`, or `withNoAgentRunningAgentLoginSaysSo` | One of the two, by whether an ssh-agent with a key is running (SSH_AUTH_SOCK); the second also on Windows | 1 |
 
 ## What VFS does that matters here
@@ -406,3 +429,6 @@ Found by checking Commons VFS 2.10.0's code and its capabilities at run time (20
     server that indents (Tomcat's WebdavServlet) puts whitespace around `<D:collection/>`, Jackrabbit then gives a list
     of nodes, and VFS fails with a ClassCastException: it can't tell what "/" is, nor list anything. Its listing also
     keeps members the server answered without a 200 propstat.
+26. **VFS's HDFS provider can't run from its own pom.** VFS's project pom excludes every dependency of hadoop-common
+    (`*:*`), so with `commons-vfs2-hdfs` alone Hadoop's configuration fails to load (no Woodstox). Hadoop's client must
+    be added beside it.

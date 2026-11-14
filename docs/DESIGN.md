@@ -808,3 +808,28 @@ folders and files on a server that indents, VFS alone failing there, members lef
 rename and delete, a login, URLs and settings, and the resourcetype reader; `VfsWebdavsTest`: a trusted certificate
 (read and write), one the JVM doesn't trust refused, a trusted one for another host refused;
 `VfsOptionalLibrariesTest.withoutJackrabbit2`.
+
+## 18. vfshdfs (2026-11-14)
+
+On VFS's `hdfs` scheme (`commons-vfs2-hdfs`), read and write (VFS's HDFS provider can create, delete, rename, write
+and set a file's time; random access read only). **Settings:** the name node's `host` and `port` (8020), and
+`config`, an optional local Hadoop configuration file (`hdfs-site.xml`, `core-site.xml`) for what a cluster needs
+beyond its address. The user is Hadoop's, as for its own client (the local user, or HADOOP_USER_NAME); Kerberos and
+the like come from the configuration. URL `vfshdfs://namenode:8020/user/tony/a.txt`.
+
+1. **No compile-time Hadoop.** Hadoop is a large library, and this module needs nothing of it but one option, the
+   configuration file, which is given to VFS's `HdfsFileSystemConfigBuilder.setConfigURL` by reflection. The library
+   check (13.3) now takes several classes: VFS's HDFS provider and Hadoop's `FileSystem`.
+2. **VFS's pom drops every dependency of hadoop-common** (an exclusion of `*:*`), so `commons-vfs2-hdfs` can't run on
+   its own (checked: Hadoop's configuration then lacks Woodstox). Users add Hadoop's client too, and the message says
+   so: "vfshdfs needs commons-vfs2-hdfs (org.apache.commons:commons-vfs2-hdfs) and Hadoop's client
+   (org.apache.hadoop:hadoop-client) on the class path".
+3. A name node that can't be reached fails the connect with the reason ("vfshdfs://host:8020/:
+   java.net.ConnectException: Connection refused"); VFS's message is "Unknown message with code \"Unable to check
+   existence \"".
+4. **Tests (decided: only against a cluster that is given).** `mvn test -Dparley.test.hdfs=hdfs://namenode:8020/a/dir`
+   turns on the `hdfs` profile, which adds `commons-vfs2-hdfs`, `hadoop-common` and `hadoop-hdfs-client` (3.4.1, the
+   version VFS 2.10.0 is built with) to the tests, and runs the shared suite (`TestVfsHdfs`) under that folder.
+   Without it, `VfsHdfsFactoryTest` checks the registration, settings and URLs, and the missing-library message; with
+   the profile, also the configuration file (missing: said; present: given to VFS) and an unreachable name node. Not
+   yet run against a real cluster.

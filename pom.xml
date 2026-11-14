@@ -80,6 +80,54 @@
 		</repository>
 	</distributionManagement>
 
+	<profiles>
+		<!-- The vfshdfs tests against a real cluster: mvn test -Dparley.test.hdfs=hdfs://namenode:8020/a/dir
+		     adds VFS's HDFS provider (and Hadoop's client) to the tests only then; without it they are skipped -->
+		<profile>
+			<id>hdfs</id>
+			<activation>
+				<property>
+					<name>parley.test.hdfs</name>
+				</property>
+			</activation>
+			<dependencies>
+				<dependency>
+					<groupId>org.apache.commons</groupId>
+					<artifactId>commons-vfs2-hdfs</artifactId>
+					<version>${commons-vfs2.version}</version>
+					<scope>test</scope>
+				</dependency>
+				<!-- VFS's own pom drops every dependency of hadoop-common, so Hadoop's are named here, nearer,
+				     with theirs (the version VFS 2.10.0 is built with) -->
+				<dependency>
+					<groupId>org.apache.hadoop</groupId>
+					<artifactId>hadoop-common</artifactId>
+					<version>3.4.1</version>
+					<scope>test</scope>
+				</dependency>
+				<dependency>
+					<groupId>org.apache.hadoop</groupId>
+					<artifactId>hadoop-hdfs-client</artifactId>
+					<version>3.4.1</version>
+					<scope>test</scope>
+				</dependency>
+			</dependencies>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-surefire-plugin</artifactId>
+						<configuration>
+							<systemPropertyVariables>
+								<parley.test.hdfs>${parley.test.hdfs}</parley.test.hdfs>
+							</systemPropertyVariables>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+
 	<dependencies>
 		<!-- The FileSource API this implements -->
 		<dependency>
