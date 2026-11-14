@@ -8,8 +8,8 @@ doc (17.1, 17.2) and what VFS itself does; sections 3 to 7 are the design; secti
 ## 1. Decisions already made (To-Do 17.1 and 17.2, 2026-11-07)
 
 1. Read and write.
-2. One factory per VFS scheme. Its type id is the scheme (`zip`, `tar`, `http`, `webdav4` ...), because the registry
-   maps one type id to one class. Almost all the code is shared; each scheme's factory is a small subclass.
+2. One factory per VFS scheme, because the registry maps one type id to one class. Its type id was to be the scheme
+   (`zip`, `tar` ...); changed 2026-11-13 (Q9) to `vfs` + the scheme (`vfszip`, `vfstar`, `vfshttp` ...). Almost all the code is shared; each scheme's factory is a small subclass.
 3. Files are addressed by the plain VFS URL, e.g. `zip:file:///tmp/a.zip!/dir`.
 4. One direct dependency, `commons-vfs2`. A scheme's own library (JSch, commons-compress, httpclient5 ...) is optional
    and added by whoever uses that scheme.
@@ -17,8 +17,9 @@ doc (17.1, 17.2) and what VFS itself does; sections 3 to 7 are the design; secti
    Once one scheme works, a further scheme is little more than configuration: its type id and connection settings.
 6. Lock scope `PROCESS`; capabilities conservative (no atomic or durable guarantees claimed).
 7. VFS schemes Parley already has (`sftp`, `ftp`, `ftps`) would clash in the registry. For the 17.2 comparison VFS's
-   are registered as `vfs-sftp`, `vfs-ftp` and `vfs-ftps`; the comparison decides what is exposed after that.
-8. Build order: the shared base with `vfs-sftp` first, then the other schemes.
+   were to be registered as `vfs-sftp`, `vfs-ftp` and `vfs-ftps`; since Q9 (2026-11-13) they are `vfssftp`, `vfsftp`
+   and `vfsftps`, which never clash, whatever the comparison finds.
+8. Build order: the shared base with `vfssftp` first, then the other schemes.
 
 ## 2. What VFS gives us (checked against 2.10.0)
 
@@ -77,13 +78,13 @@ All in `us.bringardner.parley.files.vfs`.
 | `VfsSeekableInputStream` | `ISeekableInputStream` | Over `RandomAccessContent` in `READ` mode |
 | `VfsAuthenticator` | VFS `UserAuthenticator` | Hands VFS the user and password when it connects, resolving a keychain reference then (section 4.3) |
 | `VfsLog` | commons-logging `Log` | Sends VFS's own logging through the factory (BaseObject, then `System.Logger`), as parley-files-ftp's `FtpClientWrapper` does |
-| `VfsSftpFileSourceFactory` | `VfsFileSourceFactory` | Type id `vfs-sftp`: the first scheme |
+| `VfsSftpFileSourceFactory` | `VfsFileSourceFactory` | Type id `vfssftp`: the first scheme |
 | later: `VfsFtpFileSourceFactory`, `VfsFtpsFileSourceFactory`, `VfsZipFileSourceFactory`, `VfsTarFileSourceFactory`, `VfsHttpFileSourceFactory`, `VfsWebdavFileSourceFactory` ... | `VfsFileSourceFactory` | One small class per scheme |
 
 What a scheme's subclass supplies (everything else is shared):
 
-1. `getTypeId()`: the registry key (`vfs-sftp`, `zip` ...).
-2. `vfsScheme()`: the VFS scheme it opens (`sftp`, `zip` ...); usually the type id without a `vfs-` prefix.
+1. `getTypeId()`: the registry key and URL scheme, `vfs` + the VFS scheme (`vfssftp`, `vfszip` ...).
+2. `vfsScheme()`: the VFS scheme it opens (`sftp`, `zip` ...): the type id without its `vfs` prefix, by default.
 3. `getConnectionSettings()`: its settings (host, port, user, password; or, for an archive, the archive).
 4. `rootUri()`: the VFS URI of the file system's root, built from the settings (`sftp://tony@host:22/`,
    `zip:file:///tmp/a.zip!/`).
@@ -136,7 +137,7 @@ file system, identified by its root URI:
 
 1. Options: `setUserDirIsRoot(false)` (2.2.4); connect timeout from `connectTimeout`.
 2. Settings: parley-files-sftp's own, with the same names and defaults, so a saved sftp connection works as a
-   vfs-sftp one and 17.2 compares like with like: `host`, `port` (22), `user`, `auth`, `password`, `identityFile`,
+   vfssftp one and 17.2 compares like with like: `host`, `port` (22), `user`, `auth`, `password`, `identityFile`,
    `privateKey`, `knownHosts`, `strictHostKeyChecking` (`yes`), `connectTimeout`.
 3. Keys: the key (from `privateKey`, or read from `identityFile`) is given to VFS as bytes (`BytesIdentityInfo`).
 4. Host keys (Q5, recommended 2026-11-13, awaiting OK): as parley-files-sftp does them. `knownHosts` is a local file
@@ -147,7 +148,7 @@ file system, identified by its root URI:
    `setIdentityRepositoryFactory` (that hook is meant for identities, so it would be a side effect VFS doesn't promise
    to keep), and a hidden `FileProxy` copy of the known hosts (more code for the same file).
 5. Agent login (`auth` = Agent): later, through `setIdentityRepositoryFactory` with JSch's agent support.
-4. JSch: the maintained `com.github.mwiede:jsch`, as parley-files-sftp-jsch uses, which makes `vfs-sftp` against
+4. JSch: the maintained `com.github.mwiede:jsch`, as parley-files-sftp-jsch uses, which makes `vfssftp` against
    `sftp-jsch` the cleanest 17.2 pair.
 
 ### 4.5 The rest of FileSourceFactory
@@ -273,14 +274,15 @@ stream is closed on its own, and `FileContent.close()` is never called while one
 
 ## 6. Addressing by URL (decision 1.3; Q3 and Q8)
 
-### 6.1 URL handlers (Q3, decided 2026-11-13 for now)
+### 6.1 URL handlers and type ids (Q3 and Q9, decided 2026-11-13)
 
-1. Each scheme's URL handler is named `vfs` + the VFS scheme: `vfszip`, `vfstar`, `vfstgz`, `vfshttp`, `vfssftp` ...,
-   found by the JDK as `us.bringardner.parley.files.vfszip.Handler` and so on.
+1. Each scheme's type id and URL scheme are `vfs` + the VFS scheme: `vfszip`, `vfstar`, `vfstgz`, `vfshttp`,
+   `vfssftp` ... The JDK finds the URL handler as `us.bringardner.parley.files.vfszip.Handler` and so on.
 2. The handler's URL is the VFS URL with `vfs` in front: `vfszip:file:///tmp/a.zip!/dir` is VFS's
    `zip:file:///tmp/a.zip!/dir`.
-3. The prefix removes both problems a plain scheme had: no package name has a `-` in it, and none takes over a scheme
-   the JDK owns (`http`, `https`, `jar`, `file`). So every scheme can have a handler.
+3. The prefix removes the problems a plain scheme had: no package name has a `-` in it, none takes over a scheme the
+   JDK owns (`http`, `https`, `jar`, `file`), and none clashes with Parley's own `sftp`, `ftp` and `ftps`. So every
+   scheme can have a handler.
 
 ### 6.2 How a URL reaches a file (Q8)
 
@@ -293,14 +295,13 @@ stream is closed on its own, and `FileContent.close()` is never called while one
 So with the handlers of 6.1, `FileSourceFactory.getFileSource("vfszip:file:///tmp/a.zip!/dir")` and
 `new URL("vfszip:...").openConnection()` work with **no change to parley-files**, on two conditions:
 
-1. **The factory's type id is the URL's scheme** (`vfszip`), since step 1 looks the factory up by it. Today's design
-   says type id = VFS scheme (`zip`), so this needs Q9.
+1. **The factory's type id is the URL's scheme** (`vfszip`), since step 1 looks the factory up by it (Q9, decided).
 2. **The factory takes what `FileSourceUri` calls the path.** A nested URL (`vfszip:file:///tmp/a.zip!/dir`) is an
    opaque URI, and for one of those `FileSourceUri` gives the whole inner part (`file:///tmp/a.zip!/dir`) as the path.
    `VfsFileSourceFactory.createFileSource` therefore also accepts a value that starts with its root URI and takes the
    rest as the path. A server URL (`vfssftp://tony@host/home/tony`) is hierarchical and gives a plain path.
 
-What that leaves of Q8's two options:
+Decided 2026-11-13 (Q8): this way, with no change to parley-files. What that leaves of the two other options:
 
 1. **`VfsFileSourceFactory.open(String url)` in this module** is no longer needed for URLs with a handler; it would
    only save the caller from building a `java.net.URL`. Not proposed.
@@ -337,10 +338,10 @@ A `filesource:` URL (`filesource:/dir?sourcetype=vfszip&archive=...`) works as f
 6. **Q6 a scheme that can't list (http): decided for now, an empty list** (5.5).
 7. **Q7 GraalVM: later.** VFS finds its providers from `providers.xml` by reflection; to be checked before
    parley-files-vfs goes into fsh's native build.
-8. **Q8 plain VFS URLs: worked out in 6.2.** The handlers of Q3 and parley-files' existing `getFileSource(URL)` open a
-   VFS URL with no parley-files change, once Q9 is settled. Changing `FileSource.of(URI)` is noted, not needed.
-9. **Q9 type ids = the handler's scheme? Open.** For 6.2 to work, each factory's type id must be its URL scheme:
-   `vfszip`, `vfstar`, `vfshttp`, `vfssftp`, `vfsftp`, `vfsftps` ... This would replace 17.1's "type id = the VFS
-   scheme" (`zip`) and 17.2's `vfs-sftp`, `vfs-ftp`, `vfs-ftps`: one rule for every scheme, which also keeps them apart
-   from Parley's own `sftp`, `ftp` and `ftps` for good, whatever 17.2 finds. Recommended; a rename, so it waits for
-   your OK.
+8. **Q8 plain VFS URLs: decided, as 6.2 works it out.** The handlers of Q3 and parley-files' existing
+   `getFileSource(URL)` open a VFS URL with no parley-files change; no `open(url)` in this module. Changing
+   `FileSource.of(URI)` to take every provider's URLs is noted, not needed.
+9. **Q9 type ids: decided, `vfs` + the VFS scheme**, the same as the URL scheme: `vfszip`, `vfstar`, `vfshttp`,
+   `vfssftp`, `vfsftp`, `vfsftps` ... Replaces 17.1's "type id = the VFS scheme" (`zip`) and 17.2's `vfs-sftp`,
+   `vfs-ftp`, `vfs-ftps` (17.1 was preliminary). One rule for every scheme, and never a clash with Parley's own `sftp`,
+   `ftp` and `ftps`.

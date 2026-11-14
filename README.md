@@ -27,18 +27,18 @@ Requires Java 11 or later. Depends on `parley-files` and `commons-vfs2` (which b
 VFS needs a library of its own for most schemes, and finds a scheme only when that library is on the class path. This
 module doesn't depend on them: add the one for each scheme you use.
 
-| Scheme | Add | VFS can write |
+| Type id (VFS scheme) | Add | VFS can write |
 |---|---|---|
-| `vfs-sftp` | `com.github.mwiede:jsch` (the maintained JSch fork, same packages as `com.jcraft:jsch`) | yes (random access: read only) |
-| `vfs-ftp`, `vfs-ftps` | `commons-net:commons-net` | yes (random access: read only) |
-| `zip`, `jar` | nothing | no (read only) |
-| `tar`, `tgz`, `tbz2` | `org.apache.commons:commons-compress` | no (read only) |
-| `http`, `https` | `org.apache.httpcomponents.client5:httpclient5` | no (read only, no listing) |
-| `webdav4`, `webdav4s` | `org.apache.commons:commons-vfs2-jackrabbit2` (VFS's WebDAV provider is its own artifact) | yes (random access: read only) |
+| `vfssftp` (`sftp`) | `com.github.mwiede:jsch` (the maintained JSch fork, same packages as `com.jcraft:jsch`) | yes (random access: read only) |
+| `vfsftp`, `vfsftps` (`ftp`, `ftps`) | `commons-net:commons-net` | yes (random access: read only) |
+| `vfszip`, `vfsjar` (`zip`, `jar`) | nothing | no (read only) |
+| `vfstar`, `vfstgz`, `vfstbz2` (`tar`, `tgz`, `tbz2`) | `org.apache.commons:commons-compress` | no (read only) |
+| `vfshttp`, `vfshttps` (`http`, `https`) | `org.apache.httpcomponents.client5:httpclient5` | no (read only, no listing) |
+| `vfswebdav4`, `vfswebdav4s` (`webdav4`, `webdav4s`) | `org.apache.commons:commons-vfs2-jackrabbit2` (VFS's WebDAV provider is its own artifact) | yes (random access: read only) |
 
-The `vfs-` prefix on sftp, ftp and ftps keeps them apart from Parley's own `sftp`, `ftp` and `ftps` while the two are
-compared (To-Do 17.2). All the type ids may become `vfs` + the scheme (`vfszip`, `vfssftp` ...), to match the URL
-handlers ([docs/DESIGN.md](docs/DESIGN.md), Q9).
+Each type id is `vfs` + the VFS scheme, and is also the scheme of its URLs: `vfszip:file:///tmp/a.zip!/dir` is VFS's
+`zip:file:///tmp/a.zip!/dir`, and `FileSourceFactory.getFileSource("vfszip:...")` opens it. The prefix keeps them
+apart from Parley's own `sftp`, `ftp` and `ftps` and from the URL schemes the JDK owns (`http`, `https`, `jar`, `file`).
 
 ## What VFS does that matters here
 
@@ -60,8 +60,8 @@ Found by checking Commons VFS 2.10.0's code and its capabilities at run time (20
 6. **Each factory has a VFS manager of its own.** VFS's shared one (`VFS.getManager()`) serves the whole JVM, and
    closing it would close everyone's connections.
 7. **A plain VFS URL can't be opened through `FileSource.of(URI)`** (it takes only `filesource:` and `file:`), and a
-   `java.net.URL` can't be had for a scheme with a `-` in it or for one the JDK already owns (http, https, jar, file). Hence the URL
-   handlers named `vfs` + the scheme (`vfszip:file:///tmp/a.zip!/dir`).
+   `java.net.URL` can't be had for a scheme with a `-` in it or for one the JDK already owns (http, https, jar, file). Hence the type
+   ids and URL schemes named `vfs` + the scheme (`vfszip:file:///tmp/a.zip!/dir`).
 8. **VFS's sftp runs `id -u` and `id -G` on the server** (an exec channel) to work out what the user may do. On a
    server that allows SFTP only, it can't, and takes the user to be every file's owner.
 9. **VFS has no owner, group or other permission bits in its API**, only what the connected user can do. sftp and ftp
