@@ -78,6 +78,82 @@ managers (`SecureBaseObject.getDefaultTrustManagers()`) or the JVM's, and for th
 do, from VFS: write at a position, set permission bits or times, send ACCT (parley-files-ftp's `account`), or make
 links. A directory's time is the listing's (often to the minute); a file's is to the second where the server has MDTM.
 
+## Workarounds and skipped tests
+
+Everything parley-files-vfs does differently from VFS left to itself, and every test that doesn't run, with where it is
+and what tests it, as a checklist for testing. Item numbers in brackets are those of "What VFS does" below; DESIGN
+sections are in [docs/DESIGN.md](docs/DESIGN.md). Test names are classes in `src/test` and their methods
+(`AbstractVfs*Test` methods run for both vfssftp and vfsftp).
+
+### A. Every scheme (`VfsFileSource`, `VfsFileSourceFactory`)
+
+| # | VFS left to itself | What parley-files-vfs does | Tested by |
+|---|---|---|---|
+| A1 | One manager for the whole JVM (`VFS.getManager()`), which closing would close for everyone [6] | Each factory makes and closes its own manager | Not on its own (every factory test disconnects its own) |
+| A2 | Moving onto a file that exists deletes it first, a folder with everything in it [3] | `renameTo` returns false if the destination exists; `renameTo(dest, true)` replaces a file or empty folder | `AbstractVfsTrapsTest`: `renameOntoAnExistingFileReturnsFalseAndKeepsBoth`, `renameOntoAnExistingDirectoryLeavesItAlone`, `renameReplacingAFileReplacesIt`, `renameIntoAMissingDirectoryReturnsFalse` |
+| A3 | Create-folder makes every missing parent and does nothing if the folder is there [4] | `mkdir` is one level and false if it's there; `mkdirs` false if it's there | `mkdirIsOneLevelAndFalseIfThere` |
+| A4 | Create-file makes missing parents and does nothing if the file is there [4] | `createNewFile` false if it's there (never truncates), IOException without its directory. **Not atomic** | `createNewFileOnAnExistingFileReturnsFalseAndKeepsIt`, `capabilitiesClaimNothingAtomic` |
+| A5 | An output stream makes missing parents | FileNotFoundException for a missing parent or a directory, as `FileOutputStream` | `writingIntoAMissingDirectoryFails` |
+| A6 | Deleting a non-empty folder, listing a file | `delete` false for a non-empty folder; `listFiles` null for a file, as `java.io.File` | `deleteIsLikeJavaIoFile`, `listingIsNullForAFileAndNamesTheChildren` |
+| A7 | No canonical path (links can't be followed) | The canonical path is lexical ("." and ".." resolved), as in parley-files-ftp | `pathsAreLexical` |
+| A8 | Capabilities say nothing of atomicity | `getCapabilities()` claims nothing atomic or durable; lock scope PROCESS | `capabilitiesClaimNothingAtomic`, `vfsLocksStayInThisJvm` |
+| A9 | A `FileObject` from a closed manager is dead | A file resolves again after its factory reconnects | `aFileWorksAfterItsFactoryReconnects` (both factory tests) |
+| A10 | Open streams belong to a file's `FileContent` per thread; closing it closes them all | Each stream is closed on its own; `FileContent.close()` is never called while one may be open | The shared suites (no test of its own) |
+| A11 | Owner, group, link target, access and creation times unknown | A principal with no name; `getLinkedTo()` null; times 0 | Not on their own |
+| A12 | `isHidden()` not answered by every provider | VFS's answer, or a name starting with "." | Not on its own |
+| A13 | A `vfs<scheme>:` URL has no `URLConnection` (parley-files' takes only `filesource:`) [11] | `VfsUrlConnection` opens it with `getFileSource(URL)` and disconnects that factory when its stream closes | `aVfsUrlOpensAsAJavaNetUrl` (both factory tests) |
+| A14 | A write on a read-only file system (an archive) fails with VFS's message | An IOException saying the file system is read only | Not yet: no archive scheme is built |
+| A15 | A file system that can't list (http) throws | An empty list (Q6) | Not yet: no http scheme is built |
+| A16 | A nested URL (`vfszip:file:///a.zip!/dir`) reaches the factory whole | `createFileSource` takes a value starting with the root URI as a path | Not yet: no archive scheme is built |
+
+### B. vfssftp (`VfsSftpFileSourceFactory`)
+
+| # | VFS left to itself | What vfssftp does | Tested by |
+|---|---|---|---|
+| B1 | "/" is the user's home directory (`userDirIsRoot` true) [5] | Paths are the server's | Not distinguishable here: the test server's "/" is the user's home |
+| B2 | A password login tries `~/.ssh/id_rsa` first | A password login gives VFS no keys; `preferredAuthentications` is `password,keyboard-interactive`, or `publickey` for a key | Every test (they log in with a password) |
+| B3 | Host keys: VFS's own defaults | `knownHosts` (default `~/.ssh/known_hosts`) and `strictHostKeyChecking` (default yes), as parley-files-sftp (Q5) | `VfsSftpFactoryTest`: `anUnknownHostKeyIsRefused`, `aKnownHostKeyIsAccepted` |
+| B4 | No owner, group or other bits in VFS's API [9] | The nine bits read from VFS's sftp provider by reflection (protected `getPermissions(false)`); false bits, logged once, if a VFS version lacks it | `VfsSftpPermissionBitsTest.bitsAreTheServers` |
+| B5 | A permission change sends the whole stat back (size, owner, group, times, mode) [18] | A chmod with only the mode, from the server's mode read just before, special bits kept, on VFS's channel reached by reflection; VFS's setters if that fails (DESIGN 10.5) | `aFileItsOwnerCantReadCanBeChanged`, `aChangeMadeElsewhereIsKept`; the special bits can't be tested on MINA (Java can't hold them) |
+| B6 | The group's and other users' bits can't be set alone | Each set alone by that chmod (DESIGN 10.6) | `groupAndOtherBitsAlone`, `TestVfsSftp.testPermissions`, `VfsSftpNioProviderTests`: `testFileAttributes`, `testCreateDir` |
+| B7 | `knownHosts` and key files must be `java.io.File` | `knownHosts` is a local file (as in parley-files-sftp); a key is given to VFS as bytes | `aKnownHostKeyIsAccepted` (the key: not tested) |
+| B8 | JSch needed on the class path to load anything | JSch is used from a nested class only, so the registry loads the factory without it | Not tested |
+
+### C. vfsftp and vfsftps (`VfsFtpFileSourceFactory`, `VfsFtpsFileSourceFactory`, `VfsTrustManager`)
+
+| # | VFS left to itself | What vfsftp and vfsftps do | Tested by |
+|---|---|---|---|
+| C1 | Active mode [12] | Passive | `VfsFtpFactoryTest.vfsOptionsAreParleyLike` |
+| C2 | "/" is the login directory [12] | Paths are the server's | `vfsOptionsAreParleyLike` (not distinguishable here: the test server's "/" is the login directory) |
+| C3 | Times from the listing, to the minute at best | MDTM for files, to the second | `VfsFtpTrapsTest.timesCantBeSetButAreReadToTheSecond` |
+| C4 | With MDTM on, a directory's time fails (servers answer MDTM for files) [15] | A directory's time from its listing entry, read by reflection | `aDirectoryHasATime` |
+| C5 | File names in ISO-8859-1 | UTF-8, and OPTS UTF8 where the server lists it | `vfsOptionsAreParleyLike` |
+| C6 | A transfer ended early (426) is a failed close [16] | 426 and 550 after an early close are fine | `AbstractVfsRandomAccessTest.headAndTail` |
+| C7 | TLS: no PROT, so data goes in the clear [13] | PBSZ 0, PROT P | `VfsFtpTlsTest.tlsOptions`, and its listing, reading and writing over TLS |
+| C8 | TLS: any in-date certificate accepted, for any host [14] | `VfsTrustManager`: the chain by `SecureBaseObject`'s trust managers or the JVM's, and the host name (RFC 6125) | `aCertificateTheJvmDoesntTrustIsRefused`, `aCertificateForAnotherHostIsRefused`, `VfsTrustManagerTest` |
+| C9 | VFS's ftps defaults to explicit TLS | vfsftp with `secure` is explicit, vfsftps implicit, as parley-files-ftp | `vfsftpWithSecureIsExplicitTls`, `vfsftpsIsImplicitTls` |
+| C10 | `vfs` + VFS's URI for explicit TLS would be `vfsftps:` (implicit) | `getURL()` is `vfsftp://...?secure=true` | `explicitTlsUrlsSaySecure` |
+| C11 | No owner, group or other bits in VFS's API [17] | The nine bits from the listing entry (private `ftpFile`) by reflection | `VfsFtpPermissionBitsTest` (skipped as root: D6) |
+| C12 | No ACCT, no writing at a position | `account` and `storeAtOffset` aren't offered; a saved connection with them still opens | `settingsAreParleyFilesFtps` |
+| C13 | Can't set a permission bit or a time | The setters return false | `TestVfsFtp.testPermissions`, `timesCantBeSetButAreReadToTheSecond` |
+| C14 | commons-net needed on the class path to load anything | commons-net is used from a nested class only | Not tested |
+
+### D. Tests that don't run, and why
+
+With the test server each class starts: as an ordinary user 169 tests, 28 skipped, none failing; as root 163.
+
+| # | Test | Skipped for | Count |
+|---|---|---|---|
+| D1 | `AbstractLockTests`' cross-process cases (`VfsSftpLockTest`, `VfsFtpLockTest`) | The suite skips them: VFS's locks reach only this JVM (scope PROCESS) | 11 each |
+| D2 | `fileChannelMapsPrivateAndReadWrite` (both NIO tests) | The suite skips it: it writes at a position, which no remote VFS scheme can | 1 each |
+| D3 | `VfsSftpNioProviderTests.transferToStopsWhenTheTargetTakesNothing` | JSch drops a stream whose reading thread has ended, and the test reads in one thread and closes in another [10] | 1 |
+| D4 | `VfsFtpNioProviderTests`: `testFileAttributes`, `testCreateDir` | They set permission bits, which VFS's ftp can't (C13) | 2 |
+| D5 | `VfsFtpNioProviderTests.fileChannelForceSendsWhatIsHeld` | An FTP upload is stored when it ends, as parley-files-ftp's NIO tests say too | 1 |
+| D6 | `VfsFtpPermissionBitsTest` | As root only: Parley's FtpServer lists every file as writable by its owner when run as root | the class |
+| D7 | `AbstractVfsPermissionBitsTest` (both schemes) | On Windows: POSIX bits | the class |
+| D8 | `AbstractRandomAccessStreamTests` | Not run at all: it writes at positions; `AbstractVfsRandomAccessTest` reads at positions instead, and checks that "rw" is refused | not counted |
+| D9 | `TestVfsFtp.testPermissions` | Replaced, not skipped: the shared test toggles bits; vfsftp's checks that every setter returns false and changes nothing (C13) | not counted |
+
 ## What VFS does that matters here
 
 Found by checking Commons VFS 2.10.0's code and its capabilities at run time (2026-11-13). Each one shapes the design

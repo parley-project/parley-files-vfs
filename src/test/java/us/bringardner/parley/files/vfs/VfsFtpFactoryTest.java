@@ -228,6 +228,8 @@ public class VfsFtpFactoryTest {
 		assertEquals(Boolean.FALSE, b.getUserDirIsRoot(o));
 		assertEquals(Boolean.TRUE, b.getMdtmLastModifiedTime(o));
 		assertTrue(b.getTransferAbortedOkReplyCodes(o).contains(426));
+		assertEquals("UTF-8", b.getControlEncoding(o));
+		assertEquals(Boolean.TRUE, b.getAutodetectUtf8(o));
 		assertEquals(10_000, b.getSoTimeoutDuration(o).toMillis());
 	}
 

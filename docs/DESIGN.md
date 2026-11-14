@@ -4,7 +4,8 @@ As of 2026-11-13, against Apache Commons VFS 2.10.0 (the current release, Java 8
 (release-2.0.0). Sections 1 and 2 are the decisions already in the Parley 2.0.0 To-Do doc (17.1, 17.2) and what VFS
 itself does; sections 3 to 7 are the design; section 8 records the decisions made on it (2026-11-13) and what is still
 open; section 9 records what was built (the shared base and `vfssftp`, 2026-11-13) and where it differs from the design;
-section 10 records `vfsftp` and `vfsftps` (2026-11-13), the next schemes, which To-Do 17.2 needs.
+section 10 records `vfsftp` and `vfsftps` (2026-11-13), the next schemes, which To-Do 17.2 needs. Every workaround and
+every skipped test, with the test that covers it, is listed in the README, "Workarounds and skipped tests".
 
 ## 1. Decisions already made (To-Do 17.1 and 17.2, 2026-11-07)
 
