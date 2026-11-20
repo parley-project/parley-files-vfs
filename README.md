@@ -82,7 +82,7 @@ parley-files-compare's `docs/RESULTS.md` (2026-11-13). vfssftp stays available. 
    only its channels: it starts the SSH session with no timeout (item 19 below). parley-files-sftp gives up after its
    `connectTimeout` (30 s).
 2. **No owner or group** (`getOwner()` and `getGroup()` have no name), **no links** (it can't make one or say where one
-   leads), **no access or creation time**.
+   leads, and it has no link's own owner, group or times to show: D78), **no access or creation time**.
 3. **Nothing atomic**: `createNewFile()` and `mkdir()` check, then act. parley-files-sftp's are atomic.
 4. **Can't write at a position** (`getRandomAccessStream("rw")`), so one of the shared NIO tests
    (`fileChannelMapsPrivateAndReadWrite`) is skipped. parley-files-sftp with jsch can't either, but passes that test.
